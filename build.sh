@@ -13,15 +13,18 @@ echo "Building $APP_NAME..."
 # Clean
 rm -rf "$APP_BUNDLE"
 
-# Build binary
-swift build -c release 2>&1
+# Build universal binary (arm64 + x86_64)
+swift build -c release --arch arm64 --arch x86_64 2>&1
 
 # Create .app bundle structure
 mkdir -p "$MACOS_DIR"
 mkdir -p "$RESOURCES_DIR"
 
-# Copy binary
-cp "$BUILD_DIR/release/$APP_NAME" "$MACOS_DIR/$APP_NAME"
+# Copy universal binary
+cp "$BUILD_DIR/apple/Products/Release/$APP_NAME" "$MACOS_DIR/$APP_NAME"
+
+# Verify universal binary
+file "$MACOS_DIR/$APP_NAME"
 
 # Copy icon directly
 ICNS_SRC="devUtils/Assets.xcassets/icon_full.icns"
