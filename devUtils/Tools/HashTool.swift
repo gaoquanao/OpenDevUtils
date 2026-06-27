@@ -13,6 +13,7 @@ struct HashTool: Tool {
     @State private var outputSHA256 = ""
     @State private var outputSHA512 = ""
     @State private var isUpper = false
+    @State private var debounceTask: DispatchWorkItem?
     @ObservedObject private var lang = LanguageManager.shared
     
     var body: some View {
@@ -37,7 +38,7 @@ struct HashTool: Tool {
                 .font(.title2.bold())
             Spacer()
             Button(L(.paste)) {
-                input = NSPasteboard.general.string(forType: .string) ?? ""
+                input = PasteboardHelper.readString()
                 computeHashes()
             }
             Button(L(.clear)) {
@@ -61,7 +62,7 @@ struct HashTool: Tool {
                 .border(.quaternary, width: 1)
                 .frame(minHeight: 80, maxHeight: .infinity)
                 .onChange(of: input) { _ in
-                    computeHashes()
+                    debounceCompute()
                 }
         }
     }
@@ -70,7 +71,7 @@ struct HashTool: Tool {
         HStack {
             Toggle(L(.uppercase), isOn: $isUpper)
                 .toggleStyle(.checkbox)
-                .onChange(of: isUpper) { _ in computeHashes() }
+                .onChange(of: isUpper) { _ in debounceCompute() }
             Spacer()
         }
     }
@@ -99,8 +100,7 @@ struct HashTool: Tool {
             Spacer()
             
             Button {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(value, forType: .string)
+                PasteboardHelper.writeString(value)
             } label: {
                 Image(systemName: "doc.on.doc")
             }
@@ -112,12 +112,29 @@ struct HashTool: Tool {
         .cornerRadius(6)
     }
     
+    private static let maxHashSize = 10_000_000 // 10MB input limit
+    
+    /// Debounce: delay heavy computation while user is still typing.
+    private func debounceCompute() {
+        debounceTask?.cancel()
+        let task = DispatchWorkItem { [self] in computeHashes() }
+        debounceTask = task
+        // Debounce 300ms for inputs > 100KB; immediate for smaller
+        if input.utf8.count > 100_000 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: task)
+        } else {
+            computeHashes()
+        }
+    }
+    
     private func computeHashes() {
         guard let data = input.data(using: .utf8) else {
-            outputMD5 = ""
-            outputSHA1 = ""
-            outputSHA256 = ""
-            outputSHA512 = ""
+            clearHashes()
+            return
+        }
+        guard data.count < Self.maxHashSize else {
+            clearHashes()
+            outputMD5 = "Input too large (\(data.count / 1_000_000)MB), max 10MB"
             return
         }
         
@@ -125,6 +142,10 @@ struct HashTool: Tool {
         outputSHA1 = format(sha1(data))
         outputSHA256 = format(sha256(data))
         outputSHA512 = format(sha512(data))
+    }
+    
+    private func clearHashes() {
+        outputMD5 = ""; outputSHA1 = ""; outputSHA256 = ""; outputSHA512 = ""
     }
     
     private func md5(_ data: Data) -> [UInt8] {

@@ -171,6 +171,54 @@ enum LocalizedString {
     case light
     case dark
     
+    // Sidebar sections
+    case sectionEncoding
+    case sectionText
+    case sectionJsonYaml
+    case sectionWebDev
+    
+    // Sidebar tool names
+    case toolBase64
+    case toolBase64Image
+    case toolHash
+    case toolUrlEncode
+    case toolSqlFormatter
+    case toolTextDiff
+    case toolBatchText
+    case toolTokenCounter
+    case toolRegex
+    case toolJsonEditor
+    case toolJsonPath
+    case toolYamlJson
+    case toolJwtDebugger
+    case toolHtmlPreview
+    case toolMarkdownPreview
+    case toolQrCode
+    case toolCurlConverter
+    case toolCronParser
+    case toolTimestamp
+    
+    // JWT
+    case jwtHeader
+    case jwtPayload
+    
+    // Cron descriptions
+    case cronFiveFieldsRequired
+    case cronEveryMinute
+    case cronEveryHour
+    case cronEveryDay
+    case cronEveryMonth
+    case cronEveryWeekday
+    case cronEveryMinutes
+    case cronEveryHours
+    case cronEveryDays
+    case cronEveryMonths
+    case cronEveryWeekdays
+    case cronFromTo
+    case cronAt
+    case cronRuns
+    case jsonTooLarge
+    
     func text(for lang: AppLanguage) -> String {
         switch lang {
         case .en: return en
@@ -178,6 +226,12 @@ enum LocalizedString {
         case .ja: return ja
         case .ko: return ko
         }
+    }
+    
+    func text(for lang: AppLanguage, arguments: [CVarArg] = []) -> String {
+        let template = text(for: lang)
+        guard !arguments.isEmpty else { return template }
+        return String(format: template, arguments: arguments)
     }
     
     private var en: String {
@@ -308,6 +362,50 @@ enum LocalizedString {
         case .system: return "System"
         case .light: return "Light"
         case .dark: return "Dark"
+        // Sidebar sections
+        case .sectionEncoding: return "Encoding"
+        case .sectionText: return "Text"
+        case .sectionJsonYaml: return "JSON / YAML"
+        case .sectionWebDev: return "Web / Dev"
+        // Sidebar tool names
+        case .toolBase64: return "Base64"
+        case .toolBase64Image: return "Base64 Image"
+        case .toolHash: return "Hash"
+        case .toolUrlEncode: return "URL Encode"
+        case .toolSqlFormatter: return "SQL Formatter"
+        case .toolTextDiff: return "Text Diff"
+        case .toolBatchText: return "Batch Text"
+        case .toolTokenCounter: return "Token Counter"
+        case .toolRegex: return "Regex"
+        case .toolJsonEditor: return "JSON Editor"
+        case .toolJsonPath: return "JSONPath"
+        case .toolYamlJson: return "YAML ↔ JSON"
+        case .toolJwtDebugger: return "JWT Debugger"
+        case .toolHtmlPreview: return "HTML Preview"
+        case .toolMarkdownPreview: return "Markdown Preview"
+        case .toolQrCode: return "QR Code"
+        case .toolCurlConverter: return "cURL Converter"
+        case .toolCronParser: return "Cron Parser"
+        case .toolTimestamp: return "Timestamp"
+        // JWT
+        case .jwtHeader: return "Header"
+        case .jwtPayload: return "Payload"
+        // Cron descriptions
+        case .cronFiveFieldsRequired: return "Cron expression must have 5 fields"
+        case .cronEveryMinute: return "Every minute"
+        case .cronEveryHour: return "Every hour"
+        case .cronEveryDay: return "Every day"
+        case .cronEveryMonth: return "Every month"
+        case .cronEveryWeekday: return "Every weekday"
+        case .cronEveryMinutes: return "Every %d minutes"
+        case .cronEveryHours: return "Every %d hours"
+        case .cronEveryDays: return "Every %d days"
+        case .cronEveryMonths: return "Every %d months"
+        case .cronEveryWeekdays: return "Every %d weekdays"
+        case .cronFromTo: return "From %@ to %@"
+        case .cronAt: return "At %@"
+        case .cronRuns: return "Runs %@"
+        case .jsonTooLarge: return "JSON too large (%dMB), max %dMB"
         }
     }
     
@@ -439,6 +537,50 @@ enum LocalizedString {
         case .system: return "跟随系统"
         case .light: return "浅色"
         case .dark: return "深色"
+        // Sidebar sections
+        case .sectionEncoding: return "编码"
+        case .sectionText: return "文本"
+        case .sectionJsonYaml: return "JSON / YAML"
+        case .sectionWebDev: return "Web / 开发"
+        // Sidebar tool names
+        case .toolBase64: return "Base64"
+        case .toolBase64Image: return "Base64 图片"
+        case .toolHash: return "哈希"
+        case .toolUrlEncode: return "URL 编码"
+        case .toolSqlFormatter: return "SQL 格式化"
+        case .toolTextDiff: return "文本对比"
+        case .toolBatchText: return "批量文本"
+        case .toolTokenCounter: return "Token 估算"
+        case .toolRegex: return "正则表达式"
+        case .toolJsonEditor: return "JSON 编辑器"
+        case .toolJsonPath: return "JSONPath"
+        case .toolYamlJson: return "YAML ↔ JSON"
+        case .toolJwtDebugger: return "JWT 调试器"
+        case .toolHtmlPreview: return "HTML 预览"
+        case .toolMarkdownPreview: return "Markdown 预览"
+        case .toolQrCode: return "二维码"
+        case .toolCurlConverter: return "cURL 转换器"
+        case .toolCronParser: return "Cron 解析器"
+        case .toolTimestamp: return "时间戳"
+        // JWT
+        case .jwtHeader: return "头部"
+        case .jwtPayload: return "载荷"
+        // Cron descriptions
+        case .cronFiveFieldsRequired: return "Cron 表达式必须包含 5 个字段"
+        case .cronEveryMinute: return "每分钟"
+        case .cronEveryHour: return "每小时"
+        case .cronEveryDay: return "每天"
+        case .cronEveryMonth: return "每月"
+        case .cronEveryWeekday: return "每个工作日"
+        case .cronEveryMinutes: return "每 %d 分钟"
+        case .cronEveryHours: return "每 %d 小时"
+        case .cronEveryDays: return "每 %d 天"
+        case .cronEveryMonths: return "每 %d 月"
+        case .cronEveryWeekdays: return "每 %d 个工作日"
+        case .cronFromTo: return "从 %@ 到 %@"
+        case .cronAt: return "在 %@"
+        case .cronRuns: return "执行 %@"
+        case .jsonTooLarge: return "JSON 过大（%dMB），上限 %dMB"
         }
     }
     
@@ -570,6 +712,50 @@ enum LocalizedString {
         case .system: return "システム"
         case .light: return "ライト"
         case .dark: return "ダーク"
+        // Sidebar sections
+        case .sectionEncoding: return "エンコーディング"
+        case .sectionText: return "テキスト"
+        case .sectionJsonYaml: return "JSON / YAML"
+        case .sectionWebDev: return "Web / 開発"
+        // Sidebar tool names
+        case .toolBase64: return "Base64"
+        case .toolBase64Image: return "Base64 画像"
+        case .toolHash: return "ハッシュ"
+        case .toolUrlEncode: return "URL エンコード"
+        case .toolSqlFormatter: return "SQL フォーマッター"
+        case .toolTextDiff: return "テキスト差分"
+        case .toolBatchText: return "バッチテキスト"
+        case .toolTokenCounter: return "トークンカウンター"
+        case .toolRegex: return "正規表現"
+        case .toolJsonEditor: return "JSON エディタ"
+        case .toolJsonPath: return "JSONPath"
+        case .toolYamlJson: return "YAML ↔ JSON"
+        case .toolJwtDebugger: return "JWT デバッガー"
+        case .toolHtmlPreview: return "HTML プレビュー"
+        case .toolMarkdownPreview: return "Markdown プレビュー"
+        case .toolQrCode: return "QRコード"
+        case .toolCurlConverter: return "cURL 変換器"
+        case .toolCronParser: return "Cron パーサー"
+        case .toolTimestamp: return "タイムスタンプ"
+        // JWT
+        case .jwtHeader: return "ヘッダー"
+        case .jwtPayload: return "ペイロード"
+        // Cron descriptions
+        case .cronFiveFieldsRequired: return "Cron式には5つのフィールドが必要です"
+        case .cronEveryMinute: return "毎分"
+        case .cronEveryHour: return "毎時"
+        case .cronEveryDay: return "毎日"
+        case .cronEveryMonth: return "毎月"
+        case .cronEveryWeekday: return "毎平日"
+        case .cronEveryMinutes: return "%d 分ごと"
+        case .cronEveryHours: return "%d 時間ごと"
+        case .cronEveryDays: return "%d 日ごと"
+        case .cronEveryMonths: return "%d ヶ月ごと"
+        case .cronEveryWeekdays: return "%d 平日ごと"
+        case .cronFromTo: return "%@ から %@ まで"
+        case .cronAt: return "%@ で"
+        case .cronRuns: return "%@ に実行"
+        case .jsonTooLarge: return "JSONが大きすぎます（%dMB）、上限 %dMB"
         }
     }
     
@@ -622,7 +808,7 @@ enum LocalizedString {
         case .sortLines: return "정렬"
         case .removeEmptyLines: return "빈 줄 제거"
         case .trimWhitespace: return "공백 제거"
-        case .prefixSuffix: return "접미사 / 접미어"
+        case .prefixSuffix: return "접두사 / 접미사"
         case .prefixPlaceholder: return "접두사 (예: http://)"
         case .suffixPlaceholder: return "접미사 (예: .html)"
         case .batchReplace: return "일괄 바꾸기"
@@ -660,7 +846,7 @@ enum LocalizedString {
         case .curlConverter: return "cURL 변환기"
         case .curlInput: return "cURL 명령어"
         case .jsonEditor: return "JSON 편집기"
-        case .prettyPrint: return "쁘티 프린트"
+        case .prettyPrint: return "예쁘게 출력"
         case .minify: return "압축"
         case .invalidJSON: return "잘못된 JSON"
         case .jsonpathQuery: return "JSONPath 쿼리"
@@ -701,6 +887,50 @@ enum LocalizedString {
         case .system: return "시스템"
         case .light: return "라이트"
         case .dark: return "다크"
+        // Sidebar sections
+        case .sectionEncoding: return "인코딩"
+        case .sectionText: return "텍스트"
+        case .sectionJsonYaml: return "JSON / YAML"
+        case .sectionWebDev: return "Web / 개발"
+        // Sidebar tool names
+        case .toolBase64: return "Base64"
+        case .toolBase64Image: return "Base64 이미지"
+        case .toolHash: return "해시"
+        case .toolUrlEncode: return "URL 인코딩"
+        case .toolSqlFormatter: return "SQL 포맷터"
+        case .toolTextDiff: return "텍스트 차이점"
+        case .toolBatchText: return "배치 텍스트"
+        case .toolTokenCounter: return "토큰 카운터"
+        case .toolRegex: return "정규 표현식"
+        case .toolJsonEditor: return "JSON 편집기"
+        case .toolJsonPath: return "JSONPath"
+        case .toolYamlJson: return "YAML ↔ JSON"
+        case .toolJwtDebugger: return "JWT 디버거"
+        case .toolHtmlPreview: return "HTML 미리보기"
+        case .toolMarkdownPreview: return "Markdown 미리보기"
+        case .toolQrCode: return "QR코드"
+        case .toolCurlConverter: return "cURL 변환기"
+        case .toolCronParser: return "Cron 파서"
+        case .toolTimestamp: return "타임스탬프"
+        // JWT
+        case .jwtHeader: return "헤더"
+        case .jwtPayload: return "페이로드"
+        // Cron descriptions
+        case .cronFiveFieldsRequired: return "Cron 표현식은 5개 필드가 필요합니다"
+        case .cronEveryMinute: return "매 분"
+        case .cronEveryHour: return "매 시"
+        case .cronEveryDay: return "매일"
+        case .cronEveryMonth: return "매월"
+        case .cronEveryWeekday: return "매 평일"
+        case .cronEveryMinutes: return "%d분마다"
+        case .cronEveryHours: return "%d시간마다"
+        case .cronEveryDays: return "%d일마다"
+        case .cronEveryMonths: return "%d개월마다"
+        case .cronEveryWeekdays: return "%d 평일마다"
+        case .cronFromTo: return "%@부터 %@까지"
+        case .cronAt: return "%@에"
+        case .cronRuns: return "%@에 실행"
+        case .jsonTooLarge: return "JSON이 너무 큽니다（%dMB）, 최대 %dMB"
         }
     }
 }

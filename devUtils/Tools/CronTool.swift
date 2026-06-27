@@ -4,7 +4,7 @@ struct CronTool: Tool {
     let id = "cronParser"
     let name = "Cron Parser"
     let icon = "clock"
-    let category: ToolCategory = .encoding
+    let category: ToolCategory = .webDev
     
     @State private var cronExpression = ""
     @State private var parsedFields: [CronField] = []
@@ -140,69 +140,106 @@ struct CronTool: Tool {
         }
     }
     
+    // MARK: - Shared cron field metadata
+    private typealias FieldDesc = (singular: LocalizedString, plural: LocalizedString)
+
+    private static let fieldDescriptors: [FieldDesc] = [
+        (.cronEveryMinute, .cronEveryMinutes),
+        (.cronEveryHour,   .cronEveryHours),
+        (.cronEveryDay,    .cronEveryDays),
+        (.cronEveryMonth,  .cronEveryMonths),
+        (.cronEveryWeekday,.cronEveryWeekdays),
+    ]
+
+    private static let fieldRanges: [(Int, Int)] = [(0, 59), (0, 23), (1, 31), (1, 12), (0, 7)]
+
     private func parse() {
         errorMessage = nil
         parsedFields = []
         nextRuns = []
         humanReadable = ""
-        
+
         let parts = cronExpression.trimmingCharacters(in: .whitespaces)
             .components(separatedBy: .whitespaces)
-        
+
         guard parts.count == 5 else {
-            errorMessage = "Cron expression must have 5 fields"
+            errorMessage = L(.cronFiveFieldsRequired)
             return
         }
-        
-        let names: [String]
-        switch lang.language {
-        case .zh: names = ["分钟", "小时", "日", "月", "星期"]
-        case .ja: names = ["分", "時", "日", "月", "曜日"]
-        case .ko: names = ["분", "시", "일", "월", "요일"]
-        case .en: names = ["Minute", "Hour", "Day", "Month", "Weekday"]
-        }
-        
-        let ranges: [(Int, Int)] = [(0, 59), (0, 23), (1, 31), (1, 12), (0, 7)]
-        
+
+        let names = [
+            L(.minute), L(.hour), L(.day), L(.month), L(.weekday)
+        ]
+
         for (i, part) in parts.enumerated() {
-            let desc = describeField(part, range: ranges[i])
+            let desc = describeField(part, range: Self.fieldRanges[i], desc: Self.fieldDescriptors[i])
             parsedFields.append(CronField(name: names[i], value: part, description: desc))
         }
-        
+
         humanReadable = buildDescription(parts)
         nextRuns = calculateNextRuns(parts, count: 10)
     }
-    
-    private func describeField(_ field: String, range: (Int, Int)) -> String {
-        if field == "*" { return "Every \(range.1 == 59 ? "minute" : range.1 == 23 ? "hour" : range.1 == 31 ? "day" : range.1 == 12 ? "month" : "weekday")" }
+
+    /// Returns a title-cased description for display in the field table.
+    private func describeField(_ field: String, range: (Int, Int), desc: (singular: LocalizedString, plural: LocalizedString)) -> String {
+        if field == "*" { return L(desc.singular) }
         if field.contains("/") {
             let parts = field.components(separatedBy: "/")
             if parts.count == 2, let step = Int(parts[1]) {
-                return "Every \(step) \(range.1 == 59 ? "minutes" : range.1 == 23 ? "hours" : range.1 == 31 ? "days" : range.1 == 12 ? "months" : "weekdays")"
+                if step == 1 { return L(desc.singular) }
+                return L(desc.plural, step)
             }
         }
         if field.contains("-") {
             let parts = field.components(separatedBy: "-")
-            if parts.count == 2 { return "From \(parts[0]) to \(parts[1])" }
+            if parts.count == 2 { return L(.cronFromTo, parts[0], parts[1]) }
         }
         if field.contains(",") {
-            return "At \(field.replacingOccurrences(of: ",", with: ", "))"
+            return L(.cronAt, field.replacingOccurrences(of: ",", with: ", "))
         }
-        return "At \(field)"
+        return L(.cronAt, field)
     }
-    
+
     private func buildDescription(_ parts: [String]) -> String {
-        let mins = describeField(parts[0], range: (0, 59))
-        let hours = describeField(parts[1], range: (0, 23))
-        let days = describeField(parts[2], range: (1, 31))
-        let months = describeField(parts[3], range: (1, 12))
-        let weekdays = describeField(parts[4], range: (0, 7))
-        
-        var desc = "Runs \(mins.lowercased())"
-        if parts[1] != "*" { desc += " past \(hours.lowercased())" }
-        if parts[2] != "*" { desc += " on \(days.lowercased())" }
-        if parts[3] != "*" { desc += " in \(months.lowercased())" }
-        if parts[4] != "*" { desc += " on \(weekdays.lowercased())" }
+        // Only minimal localization for the structured sentence — full i18n of sentence
+        // structure would require a format-string per language.
+        let lang = lang.language
+
+        let mins = describeField(parts[0], range: Self.fieldRanges[0], desc: Self.fieldDescriptors[0]).lowercased()
+        let hours = describeField(parts[1], range: Self.fieldRanges[1], desc: Self.fieldDescriptors[1]).lowercased()
+        let days = describeField(parts[2], range: Self.fieldRanges[2], desc: Self.fieldDescriptors[2]).lowercased()
+        let months = describeField(parts[3], range: Self.fieldRanges[3], desc: Self.fieldDescriptors[3]).lowercased()
+        let weekdays = describeField(parts[4], range: Self.fieldRanges[4], desc: Self.fieldDescriptors[4]).lowercased()
+
+        var desc = L(.cronRuns, mins)
+        if parts[1] != "*" {
+            switch lang {
+            case .en: desc += " past \(hours)"
+            case .zh: desc += "，在 \(hours) 之后"
+            case .ja: desc += "、\(hours) 過ぎ"
+            case .ko: desc += ", \(hours) 지나서"
+            }
+        }
+        if parts[2] != "*" {
+            switch lang {
+            case .en, .ja, .ko: desc += " on \(days)"
+            case .zh: desc += "，在 \(days)"
+            }
+        }
+        if parts[3] != "*" {
+            switch lang {
+            case .en: desc += " in \(months)"
+            case .zh: desc += "，在 \(months)"
+            case .ja: desc += "、\(months) に"
+            case .ko: desc += ", \(months)에"
+            }
+        }
+        if parts[4] != "*" {
+            switch lang {
+            case .en, .ja, .ko: desc += " on \(weekdays)"
+            case .zh: desc += "，在 \(weekdays)"
+            }
+        }
         return desc
     }
     
@@ -229,7 +266,7 @@ struct CronTool: Tool {
                matchField(parts[1], value: comps.hour ?? 0, min: 0, max: 23) &&
                matchField(parts[2], value: comps.day ?? 1, min: 1, max: 31) &&
                matchField(parts[3], value: comps.month ?? 1, min: 1, max: 12) &&
-               matchField(parts[4], value: (comps.weekday ?? 1) % 7, min: 0, max: 7)
+               matchField(parts[4], value: (comps.weekday ?? 1) - 1, min: 0, max: 7)
     }
     
     private func matchField(_ field: String, value: Int, min: Int, max: Int) -> Bool {

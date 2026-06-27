@@ -38,7 +38,7 @@ struct BatchTextTool: Tool {
                 .font(.title2.bold())
             Spacer()
             Button(L(.paste)) {
-                input = NSPasteboard.general.string(forType: .string) ?? ""
+                input = PasteboardHelper.readString()
             }
             Button(L(.clear)) {
                 input = ""
@@ -88,8 +88,7 @@ struct BatchTextTool: Tool {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Button(L(.copy)) {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(output, forType: .string)
+                    PasteboardHelper.writeString(output)
                 }
                 .disabled(output.isEmpty)
             }
@@ -161,8 +160,18 @@ struct BatchTextTool: Tool {
         }
     }
     
+    private static let maxBatchSize = 500_000 // 500K lines max
+    
     private func process() {
-        var lines = input.components(separatedBy: "\n")
+        let rawLines = input.components(separatedBy: "\n")
+        
+        // Size guard
+        guard rawLines.count < Self.maxBatchSize else {
+            output = "Too many lines (\(rawLines.count / 1000)K), max \(Self.maxBatchSize / 1000)K"
+            return
+        }
+        
+        var lines = rawLines
         
         // Trim whitespace
         if trimWhitespace {

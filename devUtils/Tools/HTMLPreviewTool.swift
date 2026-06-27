@@ -5,11 +5,13 @@ struct HTMLPreviewTool: Tool {
     let id = "htmlPreview"
     let name = "HTML Preview"
     let icon = "globe"
-    let category: ToolCategory = .encoding
+    let category: ToolCategory = .webDev
     
     @State private var htmlContent = ""
     @State private var refreshID = UUID()
     @ObservedObject private var lang = LanguageManager.shared
+    
+    private static let maxHTMLSize = 10_000_000 // 10MB
     
     var body: some View {
         VStack(spacing: 0) {
@@ -31,10 +33,16 @@ struct HTMLPreviewTool: Tool {
                 .font(.title2.bold())
             Spacer()
             Button(L(.paste)) {
-                htmlContent = NSPasteboard.general.string(forType: .string) ?? ""
-                refreshID = UUID()
+                htmlContent = PasteboardHelper.readString()
+                if htmlContent.utf8.count < Self.maxHTMLSize {
+                    refreshID = UUID()
+                }
             }
-            Button(L(.refresh)) { refreshID = UUID() }
+            Button(L(.refresh)) {
+                if htmlContent.utf8.count < Self.maxHTMLSize {
+                    refreshID = UUID()
+                }
+            }
                 .buttonStyle(.borderedProminent)
         }
         .padding(.vertical, 8)
@@ -42,7 +50,15 @@ struct HTMLPreviewTool: Tool {
     
     private var inputSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(L(.htmlInput)).font(.headline)
+            HStack {
+                Text(L(.htmlInput)).font(.headline)
+                Spacer()
+                if htmlContent.utf8.count >= Self.maxHTMLSize {
+                    Text("Too large (\(htmlContent.utf8.count / 1_000_000)MB)")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            }
             TextEditor(text: $htmlContent)
                 .font(.system(.body, design: .monospaced))
                 .scrollContentBackground(.visible)

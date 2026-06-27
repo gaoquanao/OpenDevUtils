@@ -8,6 +8,7 @@ struct TokenCounterTool: Tool {
     
     @State private var input = ""
     @State private var selectedModel: ModelType = .gpt4
+    @State private var stats = TokenStats(text: "", charsPerToken: ModelType.gpt4.charsPerToken)
     
     @ObservedObject private var lang = LanguageManager.shared
     
@@ -28,20 +29,8 @@ struct TokenCounterTool: Tool {
         
         func label(for lang: AppLanguage) -> String {
             switch self {
-            case .gpt4:
-                switch lang {
-                case .en: return "GPT-4 / Claude"
-                case .zh: return "GPT-4 / Claude"
-                case .ja: return "GPT-4 / Claude"
-                case .ko: return "GPT-4 / Claude"
-                }
-            case .gpt35:
-                switch lang {
-                case .en: return "GPT-3.5"
-                case .zh: return "GPT-3.5"
-                case .ja: return "GPT-3.5"
-                case .ko: return "GPT-3.5"
-                }
+            case .gpt4, .gpt35:
+                return rawValue
             case .local:
                 switch lang {
                 case .en: return "Local LLM"
@@ -51,10 +40,6 @@ struct TokenCounterTool: Tool {
                 }
             }
         }
-    }
-    
-    private var stats: TokenStats {
-        TokenStats(text: input, charsPerToken: selectedModel.charsPerToken)
     }
     
     var body: some View {
@@ -68,9 +53,15 @@ struct TokenCounterTool: Tool {
                 Spacer(minLength: 0)
             }
             .padding(.top, 12)
+            .onChange(of: selectedModel) { _ in recomputeStats() }
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear { recomputeStats() }
+    }
+    
+    private func recomputeStats() {
+        stats = TokenStats(text: input, charsPerToken: selectedModel.charsPerToken)
     }
     
     private var header: some View {
@@ -79,7 +70,7 @@ struct TokenCounterTool: Tool {
                 .font(.title2.bold())
             Spacer()
             Button(L(.paste)) {
-                input = NSPasteboard.general.string(forType: .string) ?? ""
+                input = PasteboardHelper.readString()
             }
             Button(L(.clear)) { input = "" }
         }
@@ -159,6 +150,7 @@ struct TokenCounterTool: Tool {
                 .disableSmartQuotes()
                 .border(.quaternary, width: 1)
                 .frame(minHeight: 200, maxHeight: .infinity)
+                .onChange(of: input) { _ in recomputeStats() }
         }
     }
 }

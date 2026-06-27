@@ -57,7 +57,7 @@ struct JSONPathTool: Tool {
                     .font(.headline)
                 Spacer()
                 Button(L(.paste)) {
-                    jsonInput = NSPasteboard.general.string(forType: .string) ?? ""
+                    jsonInput = PasteboardHelper.readString()
                 }
             }
             
@@ -128,8 +128,7 @@ struct JSONPathTool: Tool {
                 }
                 
                 Button(L(.copy)) {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(formattedOutput, forType: .string)
+                    PasteboardHelper.writeString(formattedOutput)
                 }
                 .disabled(results.isEmpty)
             }
@@ -150,24 +149,28 @@ struct JSONPathTool: Tool {
         }
     }
     
+    private static let maxJSONSize = 50_000_000 // 50 MB input limit
+
     private func executeQuery() {
         errorMessage = nil
         results = []
         formattedOutput = ""
         
-        guard let jsonData = jsonInput.data(using: .utf8) else {
-            errorMessage = L(.invalidJSON)
+        let utf8Count = jsonInput.utf8.count
+        guard utf8Count < Self.maxJSONSize else {
+            errorMessage = L(.jsonTooLarge, utf8Count / 1_000_000, Self.maxJSONSize / 1_000_000)
             return
         }
-        
-        guard let jsonObject = try? JSONSerialization.jsonObject(with: jsonData) else {
-            errorMessage = L(.invalidJSON)
+
+        let (jsonObject, parseErr) = tryParseJSON(jsonInput)
+        if let parseErr = parseErr {
+            errorMessage = parseErr
             return
         }
         
         let engine = JSONPathEngine()
         do {
-            results = try engine.evaluate(json: jsonObject, path: jsonpath)
+            results = try engine.evaluate(json: jsonObject!, path: jsonpath)
             
             if results.isEmpty {
                 formattedOutput = L(.noResults)

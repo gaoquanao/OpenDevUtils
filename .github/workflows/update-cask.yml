@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   update-cask:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Download DMG and compute SHA256
         id: dmg
@@ -24,8 +24,9 @@ jobs:
       - name: Update cask file
         run: |
           git clone https://x-access-token:${{ secrets.HOMEBREW_TAP_TOKEN }}@github.com/gaoquanao/homebrew-tap.git tap
-          sed -i "s/version \".*\"/version \"${{ steps.dmg.outputs.VERSION }}\"/" tap/Casks/opendevutils.rb
-          sed -i "s/sha256 \".*\"/sha256 \"${{ steps.dmg.outputs.SHA256 }}\"/" tap/Casks/opendevutils.rb
+          sed -i.bak "s/version \".*\"/version \"${{ steps.dmg.outputs.VERSION }}\"/" tap/Casks/opendevutils.rb
+          sed -i.bak "s/sha256 \".*\"/sha256 \"${{ steps.dmg.outputs.SHA256 }}\"/" tap/Casks/opendevutils.rb
+          rm -f tap/Casks/opendevutils.rb.bak
           cd tap
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

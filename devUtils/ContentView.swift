@@ -1,5 +1,50 @@
 import SwiftUI
 
+// MARK: - Tool Metadata Registry
+
+struct ToolMeta: Identifiable {
+    let id: ToolID
+    let icon: String
+    let nameKey: LocalizedString
+    let category: ToolCategory
+    
+    var name: String { L(nameKey) }
+}
+
+extension ToolMeta {
+    static let all: [ToolMeta] = [
+        // Encoding
+        ToolMeta(id: .base64,          icon: "lock.fill",               nameKey: .toolBase64,          category: .encoding),
+        ToolMeta(id: .base64Image,     icon: "photo",                   nameKey: .toolBase64Image,     category: .encoding),
+        ToolMeta(id: .hash,            icon: "number",                  nameKey: .toolHash,            category: .encoding),
+        ToolMeta(id: .urlCodec,        icon: "link",                    nameKey: .toolUrlEncode,       category: .encoding),
+        // Text
+        ToolMeta(id: .sqlFormatter,    icon: "terminal",                nameKey: .toolSqlFormatter,    category: .text),
+        ToolMeta(id: .textDiff,        icon: "doc.on.doc",              nameKey: .toolTextDiff,        category: .text),
+        ToolMeta(id: .batchText,       icon: "text.badge.checkmark",    nameKey: .toolBatchText,       category: .text),
+        ToolMeta(id: .tokenCounter,    icon: "character.bubble",        nameKey: .toolTokenCounter,    category: .text),
+        ToolMeta(id: .regex,           icon: "text.magnifyingglass",    nameKey: .toolRegex,           category: .text),
+        // JSON / YAML
+        ToolMeta(id: .jsonEditor,      icon: "doc.text.fill",           nameKey: .toolJsonEditor,      category: .json),
+        ToolMeta(id: .jsonPath,        icon: "magnifyingglass",         nameKey: .toolJsonPath,        category: .json),
+        ToolMeta(id: .yamlJson,        icon: "arrow.left.arrow.right",  nameKey: .toolYamlJson,        category: .json),
+        ToolMeta(id: .jwtDebugger,     icon: "key",                     nameKey: .toolJwtDebugger,     category: .json),
+        // Web / Dev
+        ToolMeta(id: .htmlPreview,     icon: "globe",                   nameKey: .toolHtmlPreview,     category: .webDev),
+        ToolMeta(id: .markdownPreview, icon: "doc.richtext",            nameKey: .toolMarkdownPreview, category: .webDev),
+        ToolMeta(id: .qrCode,          icon: "qrcode",                  nameKey: .toolQrCode,          category: .webDev),
+        ToolMeta(id: .curlConverter,   icon: "arrow.triangle.branch",   nameKey: .toolCurlConverter,   category: .webDev),
+        ToolMeta(id: .cronParser,      icon: "clock",                   nameKey: .toolCronParser,      category: .webDev),
+        ToolMeta(id: .timestamp,       icon: "calendar",                nameKey: .toolTimestamp,       category: .webDev),
+    ]
+    
+    static let groupedByCategory: [(category: ToolCategory, tools: [ToolMeta])] = {
+        ToolCategory.allCases.map { cat in
+            (cat, all.filter { $0.category == cat })
+        }.filter { !$0.tools.isEmpty }
+    }()
+}
+
 struct ContentView: View {
     @State private var selectedToolID: ToolID? = .base64
     @ObservedObject private var appearanceManager = AppearanceManager.shared
@@ -68,51 +113,13 @@ struct ContentView: View {
     
     private var sidebar: some View {
         List(selection: $selectedToolID) {
-            Section("Encoding") {
-                Label("Base64", systemImage: "lock.fill")
-                    .tag(ToolID.base64)
-                Label("Base64 Image", systemImage: "photo")
-                    .tag(ToolID.base64Image)
-                Label("Hash", systemImage: "number")
-                    .tag(ToolID.hash)
-                Label("URL Encode", systemImage: "link")
-                    .tag(ToolID.urlCodec)
-                Label("SQL Formatter", systemImage: "terminal")
-                    .tag(ToolID.sqlFormatter)
-            }
-            Section("Text") {
-                Label("Text Diff", systemImage: "doc.on.doc")
-                    .tag(ToolID.textDiff)
-                Label("Batch Text", systemImage: "text.badge.checkmark")
-                    .tag(ToolID.batchText)
-                Label("Token Counter", systemImage: "character.bubble")
-                    .tag(ToolID.tokenCounter)
-                Label("Regex", systemImage: "text.magnifyingglass")
-                    .tag(ToolID.regex)
-            }
-            Section("JSON / YAML") {
-                Label("JSON Editor", systemImage: "doc.text.fill")
-                    .tag(ToolID.jsonEditor)
-                Label("JSONPath", systemImage: "magnifyingglass")
-                    .tag(ToolID.jsonPath)
-                Label("YAML ↔ JSON", systemImage: "arrow.left.arrow.right")
-                    .tag(ToolID.yamlJson)
-                Label("JWT Debugger", systemImage: "key")
-                    .tag(ToolID.jwtDebugger)
-            }
-            Section("Web / Dev") {
-                Label("HTML Preview", systemImage: "globe")
-                    .tag(ToolID.htmlPreview)
-                Label("Markdown Preview", systemImage: "doc.richtext")
-                    .tag(ToolID.markdownPreview)
-                Label("QR Code", systemImage: "qrcode")
-                    .tag(ToolID.qrCode)
-                Label("cURL Converter", systemImage: "arrow.triangle.branch")
-                    .tag(ToolID.curlConverter)
-                Label("Cron Parser", systemImage: "clock")
-                    .tag(ToolID.cronParser)
-                Label("Timestamp", systemImage: "calendar")
-                    .tag(ToolID.timestamp)
+            ForEach(ToolMeta.groupedByCategory, id: \.category) { group in
+                Section(group.category.localizedTitle) {
+                    ForEach(group.tools) { tool in
+                        Label(tool.name, systemImage: tool.icon)
+                            .tag(tool.id)
+                    }
+                }
             }
         }
         .navigationTitle("OpenDevUtils")

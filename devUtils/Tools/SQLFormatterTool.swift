@@ -56,7 +56,7 @@ struct SQLFormatterTool: Tool {
             .onChange(of: keywordCase) { _ in format() }
             
             Button(L(.paste)) {
-                input = NSPasteboard.general.string(forType: .string) ?? ""
+                input = PasteboardHelper.readString()
                 format()
             }
             Button(L(.execute)) { format() }
@@ -85,8 +85,7 @@ struct SQLFormatterTool: Tool {
                 Text(L(.output)).font(.headline)
                 Spacer()
                 Button(L(.copy)) {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(output, forType: .string)
+                    PasteboardHelper.writeString(output)
                 }
                 .disabled(output.isEmpty)
             }
@@ -100,6 +99,33 @@ struct SQLFormatterTool: Tool {
         .padding(.leading, 8)
     }
     
+    private static let maxSQLSize = 5_000_000 // 5MB input limit
+    
+    /// Single combined keyword regex (compiled once, not per-format call).
+    private static let keywordPattern: NSRegularExpression = {
+        let all = ["SELECT", "FROM", "WHERE", "AND", "OR", "JOIN", "LEFT", "RIGHT", "INNER", "OUTER",
+                   "ON", "GROUP", "BY", "ORDER", "HAVING", "INSERT", "INTO", "VALUES", "UPDATE", "SET",
+                   "DELETE", "CREATE", "TABLE", "ALTER", "DROP", "INDEX", "VIEW", "AS", "DISTINCT",
+                   "COUNT", "SUM", "AVG", "MIN", "MAX", "IN", "NOT", "NULL", "IS", "BETWEEN", "LIKE",
+                   "EXISTS", "CASE", "WHEN", "THEN", "ELSE", "END", "UNION", "ALL", "LIMIT", "OFFSET",
+                   "ASC", "DESC", "IF", "WITH", "RECURSIVE", "CROSS", "NATURAL", "FULL", "OVER",
+                   "PARTITION", "ROW_NUMBER", "RANK", "DENSE_RANK", "LEAD", "LAG", "COALESCE",
+                   "NULLIF", "CAST", "CONVERT", "TRIM", "UPPER", "LOWER", "SUBSTRING", "CONCAT",
+                   "CURRENT_DATE", "CURRENT_TIMESTAMP", "NOW", "DATE", "EXTRACT", "ROUND", "FLOOR", "CEIL"]
+        return try! NSRegularExpression(pattern: "\\b(?:\(all.joined(separator: "|")))\\b", options: [.caseInsensitive])
+    }()
+    
+    /// Single combined newline-insertion regex (compiled once).
+    private static let newlinePattern: NSRegularExpression = {
+        let majors = ["SELECT", "FROM", "WHERE", "AND", "OR", "JOIN", "LEFT\\s+JOIN", "RIGHT\\s+JOIN",
+                      "INNER\\s+JOIN", "OUTER\\s+JOIN", "CROSS\\s+JOIN", "FULL\\s+JOIN", "ON",
+                      "GROUP\\s+BY", "ORDER\\s+BY", "HAVING", "LIMIT", "OFFSET",
+                      "INSERT\\s+INTO", "VALUES", "UPDATE", "SET", "DELETE\\s+FROM",
+                      "CREATE\\s+TABLE", "ALTER\\s+TABLE", "DROP\\s+TABLE", "UNION", "UNION\\s+ALL",
+                      "WITH", "EXCEPT", "INTERSECT"]
+        return try! NSRegularExpression(pattern: "(?i)\\s+(\(majors.joined(separator: "|")))\\b")
+    }()
+    
     private func format() {
         guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             output = ""
@@ -108,33 +134,22 @@ struct SQLFormatterTool: Tool {
         
         var sql = input.trimmingCharacters(in: .whitespacesAndNewlines)
         
-        // Normalize whitespace
+        // Size guard
+        guard sql.utf8.count < Self.maxSQLSize else {
+            output = "SQL too large (\(sql.utf8.count / 1_000_000)MB), max 5MB"
+            return
+        }
+        
+        // Normalize whitespace — single regex pass
         sql = sql.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
         
-        // Apply keyword case
-        for keyword in sqlKeywords {
-            let pattern = "\\b\(keyword)\\b"
-            let replacement: String
-            switch keywordCase {
-            case .upper: replacement = keyword.uppercased()
-            case .lower: replacement = keyword.lowercased()
-            case .capitalize: replacement = keyword.prefix(1).uppercased() + keyword.dropFirst().lowercased()
-            }
-            sql = sql.replacingOccurrences(of: pattern, with: replacement, options: .regularExpression)
-        }
+        // Apply keyword case — ONE regex pass (was 73 individual passes)
+        sql = keywordTransform(sql, regex: Self.keywordPattern, keywordCase: keywordCase)
         
-        // Add newlines before major keywords
-        let majorKeywords = ["SELECT", "FROM", "WHERE", "AND", "OR", "JOIN", "LEFT JOIN", "RIGHT JOIN",
-                            "INNER JOIN", "OUTER JOIN", "CROSS JOIN", "FULL JOIN", "ON",
-                            "GROUP BY", "ORDER BY", "HAVING", "LIMIT", "OFFSET",
-                            "INSERT INTO", "VALUES", "UPDATE", "SET", "DELETE FROM",
-                            "CREATE TABLE", "ALTER TABLE", "DROP TABLE", "UNION", "UNION ALL",
-                            "WITH", "EXCEPT", "INTERSECT"]
-        
-        for keyword in majorKeywords {
-            let pattern = "(?i)\\s+\(keyword.replacingOccurrences(of: " ", with: "\\s+"))\\b"
-            sql = sql.replacingOccurrences(of: pattern, with: "\n\(keywordCase == .upper ? keyword.uppercased() : keywordCase == .lower ? keyword.lowercased() : keyword)", options: .regularExpression)
-        }
+        // Add newlines before major keywords — ONE regex pass (was 26 individual passes)
+        sql = Self.newlinePattern.stringByReplacingMatches(in: sql,
+            range: NSRange(sql.startIndex..., in: sql),
+            withTemplate: "\n$1")
         
         // Indent subqueries
         let lines = sql.components(separatedBy: "\n")
@@ -160,5 +175,37 @@ struct SQLFormatterTool: Tool {
         }
         
         output = result.joined(separator: "\n")
+    }
+    
+    /// Apply keyword case transformation in a single regex pass.
+    private func keywordTransform(_ text: String, regex: NSRegularExpression, keywordCase: KeywordCase) -> String {
+        let nsString = text as NSString
+        let nsRange = NSRange(location: 0, length: nsString.length)
+        var result = ""
+        var lastEnd = 0
+        
+        regex.enumerateMatches(in: text, range: nsRange) { match, _, _ in
+            guard let m = match else { return }
+            // Append text before this match
+            if m.range.location > lastEnd {
+                result += nsString.substring(with: NSRange(location: lastEnd, length: m.range.location - lastEnd))
+            }
+            // Apply case transform to the matched keyword
+            let matched = nsString.substring(with: m.range)
+            switch keywordCase {
+            case .upper: result += matched.uppercased()
+            case .lower: result += matched.lowercased()
+            case .capitalize:
+                if let first = matched.first {
+                    result += String(first).uppercased() + matched.dropFirst().lowercased()
+                }
+            }
+            lastEnd = m.range.location + m.range.length
+        }
+        // Append remaining text after last match
+        if lastEnd < nsString.length {
+            result += nsString.substring(from: lastEnd)
+        }
+        return result
     }
 }

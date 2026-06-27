@@ -4,14 +4,19 @@ struct RegexTool: Tool {
     let id = "regex"
     let name = "Regex"
     let icon = "text.magnifyingglass"
-    let category: ToolCategory = .encoding
+    let category: ToolCategory = .text
     
     @State private var pattern = ""
     @State private var testString = ""
     @State private var matches: [RegexMatch] = []
     @State private var errorMessage: String?
     @State private var options: Set<RegexOption> = [.caseInsensitive]
+    @State private var lastPattern = ""
+    @State private var lastOptionsHash = 0
+    @State private var cachedRegex: NSRegularExpression?
     @ObservedObject private var lang = LanguageManager.shared
+    
+    private static let maxInputSize = 10_000_000 // 10MB input limit for ReDoS protection
     
     struct RegexMatch: Identifiable {
         let id = UUID()
@@ -135,7 +140,7 @@ struct RegexTool: Tool {
                 Text(L(.testString)).font(.headline)
                 Spacer()
                 Button(L(.paste)) {
-                    testString = NSPasteboard.general.string(forType: .string) ?? ""
+                    testString = PasteboardHelper.readString()
                     executeRegex()
                 }
             }
@@ -160,8 +165,7 @@ struct RegexTool: Tool {
                 }
                 Button(L(.copyAll)) {
                     let all = matches.map { $0.text }.joined(separator: "\n")
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(all, forType: .string)
+                    PasteboardHelper.writeString(all)
                 }
                 .disabled(matches.isEmpty)
             }
@@ -209,15 +213,33 @@ struct RegexTool: Tool {
         
         guard !testString.isEmpty else { return }
         
-        let nsOptions: NSRegularExpression.Options = NSRegularExpression.Options(options.map(\.flag))
+        // Size guard for ReDoS protection
+        guard testString.utf8.count < Self.maxInputSize else {
+            errorMessage = "Input too large (\(testString.utf8.count / 1_000_000)MB), max 10MB"
+            return
+        }
         
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: nsOptions) else {
+        let nsOptionsInt = options.reduce(0) { $0 | Int($1.flag.rawValue) }
+        
+        // Reuse cached regex if pattern + options unchanged
+        let regex: NSRegularExpression?
+        if pattern == lastPattern && nsOptionsInt == lastOptionsHash, let cached = cachedRegex {
+            regex = cached
+        } else {
+            let nsOptions = NSRegularExpression.Options(rawValue: UInt(nsOptionsInt))
+            regex = try? NSRegularExpression(pattern: pattern, options: nsOptions)
+            cachedRegex = regex
+            lastPattern = pattern
+            lastOptionsHash = nsOptionsInt
+        }
+        
+        guard let re = regex else {
             errorMessage = L(.invalidRegexPattern)
             return
         }
         
         let range = NSRange(testString.startIndex..., in: testString)
-        let nsMatches = regex.matches(in: testString, options: [], range: range)
+        let nsMatches = re.matches(in: testString, options: [], range: range)
         
         for m in nsMatches {
             let matchRange = m.range

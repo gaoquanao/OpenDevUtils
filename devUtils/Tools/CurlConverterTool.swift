@@ -53,7 +53,7 @@ struct CurlConverterTool: Tool {
                 .font(.title2.bold())
             Spacer()
             Button(L(.paste)) {
-                curlCommand = NSPasteboard.general.string(forType: .string) ?? ""
+                curlCommand = PasteboardHelper.readString()
                 convert()
             }
             Button(L(.clear)) {
@@ -105,8 +105,7 @@ struct CurlConverterTool: Tool {
                 Text(L(.output)).font(.headline)
                 Spacer()
                 Button(L(.copy)) {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(outputCode, forType: .string)
+                    PasteboardHelper.writeString(outputCode)
                 }
                 .disabled(outputCode.isEmpty)
             }

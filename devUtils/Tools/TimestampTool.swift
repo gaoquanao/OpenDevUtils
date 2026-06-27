@@ -4,7 +4,7 @@ struct TimestampTool: Tool {
     let id = "timestamp"
     let name = "Timestamp"
     let icon = "calendar"
-    let category: ToolCategory = .encoding
+    let category: ToolCategory = .webDev
     
     @State private var inputTimestamp = ""
     @State private var inputDate = ""
@@ -67,8 +67,7 @@ struct TimestampTool: Tool {
                     .cornerRadius(6)
                 
                 Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(currentTimestamp, forType: .string)
+                    PasteboardHelper.writeString(currentTimestamp)
                 } label: {
                     Image(systemName: "doc.on.doc")
                 }
@@ -111,8 +110,7 @@ struct TimestampTool: Tool {
                             .background(Color.green.opacity(0.1))
                             .cornerRadius(6)
                         Button {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(convertedDate, forType: .string)
+                            PasteboardHelper.writeString(convertedDate)
                         } label: {
                             Image(systemName: "doc.on.doc")
                         }
@@ -143,8 +141,7 @@ struct TimestampTool: Tool {
                             .background(Color.blue.opacity(0.1))
                             .cornerRadius(6)
                         Button {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(convertedTimestamp, forType: .string)
+                            PasteboardHelper.writeString(convertedTimestamp)
                         } label: {
                             Image(systemName: "doc.on.doc")
                         }

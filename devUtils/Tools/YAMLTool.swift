@@ -45,7 +45,7 @@ struct YAMLTool: Tool {
             .onChange(of: direction) { _ in convert() }
             
             Button(L(.paste)) {
-                input = NSPasteboard.general.string(forType: .string) ?? ""
+                input = PasteboardHelper.readString()
                 convert()
             }
             Button(L(.convert)) { convert() }
@@ -78,8 +78,7 @@ struct YAMLTool: Tool {
                 Text(direction == .yamlToJson ? L(.jsonOutput) : L(.yamlOutput)).font(.headline)
                 Spacer()
                 Button(L(.copy)) {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(output, forType: .string)
+                    PasteboardHelper.writeString(output)
                 }
                 .disabled(output.isEmpty)
             }

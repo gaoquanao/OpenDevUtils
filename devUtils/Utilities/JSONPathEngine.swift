@@ -15,6 +15,13 @@ enum JSONPathError: LocalizedError {
 }
 
 class JSONPathEngine {
+    private static let filterPattern = #"\?\(@\.(\w+)\s*([<>=!]+)\s*(-?[\d.]+)\)"#
+    private static let filterRegex: NSRegularExpression = {
+        guard let regex = try? NSRegularExpression(pattern: filterPattern) else {
+            fatalError("Invalid filterPattern regex: \(filterPattern)")
+        }
+        return regex
+    }()
     
     func evaluate(json: Any, path: String) throws -> [JSON] {
         let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -121,9 +128,8 @@ class JSONPathEngine {
     
     private func filterArray(_ json: JSON, expr: String) throws -> [JSON] {
         // e.g. ?(@.price < 10)
-        let pattern = #"\?\(@\.(\w+)\s*([<>=!]+)\s*([\d.]+)\)"#
-        guard let regex = try? NSRegularExpression(pattern: pattern),
-              let m = regex.firstMatch(in: expr, range: NSRange(expr.startIndex..., in: expr)) else {
+        let regex = Self.filterRegex
+        guard let m = regex.firstMatch(in: expr, range: NSRange(expr.startIndex..., in: expr)) else {
             throw JSONPathError.invalidExpression(expr)
         }
         let key = String(expr[Range(m.range(at: 1), in: expr)!])

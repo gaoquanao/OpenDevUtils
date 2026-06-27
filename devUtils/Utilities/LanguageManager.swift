@@ -35,8 +35,16 @@ class LanguageManager: ObservableObject {
     func t(_ key: LocalizedString) -> String {
         key.text(for: language)
     }
+    
+    func t(_ key: LocalizedString, _ args: CVarArg...) -> String {
+        key.text(for: language, arguments: args)
+    }
 }
 
 func L(_ key: LocalizedString) -> String {
     LanguageManager.shared.t(key)
+}
+
+func L(_ key: LocalizedString, _ args: CVarArg...) -> String {
+    LanguageManager.shared.t(key, args)
 }

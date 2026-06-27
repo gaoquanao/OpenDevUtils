@@ -4,7 +4,7 @@ struct JWTDebuggerTool: Tool {
     let id = "jwtDebugger"
     let name = "JWT Debugger"
     let icon = "key"
-    let category: ToolCategory = .webDev
+    let category: ToolCategory = .json
     
     @State private var jwtToken = ""
     @State private var headerJSON = ""
@@ -36,7 +36,7 @@ struct JWTDebuggerTool: Tool {
                 .font(.title2.bold())
             Spacer()
             Button(L(.paste)) {
-                jwtToken = NSPasteboard.general.string(forType: .string) ?? ""
+                jwtToken = PasteboardHelper.readString()
                 decode()
             }
             Button(L(.clear)) {
@@ -73,11 +73,10 @@ struct JWTDebuggerTool: Tool {
         VStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("Header").font(.headline)
+                    Text(L(.jwtHeader)).font(.headline)
                     Spacer()
                     Button(L(.copy)) {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(headerJSON, forType: .string)
+                        PasteboardHelper.writeString(headerJSON)
                     }
                 }
                 TextEditor(text: .constant(headerJSON))
@@ -90,11 +89,10 @@ struct JWTDebuggerTool: Tool {
             
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("Payload").font(.headline)
+                    Text(L(.jwtPayload)).font(.headline)
                     Spacer()
                     Button(L(.copy)) {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(payloadJSON, forType: .string)
+                        PasteboardHelper.writeString(payloadJSON)
                     }
                 }
                 TextEditor(text: .constant(payloadJSON))
@@ -110,8 +108,7 @@ struct JWTDebuggerTool: Tool {
                     Text(L(.signature)).font(.headline)
                     Spacer()
                     Button(L(.copy)) {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(signature, forType: .string)
+                        PasteboardHelper.writeString(signature)
                     }
                 }
                 Text(signature.isEmpty ? "—" : signature)
@@ -153,6 +150,7 @@ struct JWTDebuggerTool: Tool {
         if let payloadData = base64URLDecode(parts[1]),
            let json = try? JSONSerialization.jsonObject(with: payloadData),
            let prettyData = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
+            errorMessage = nil  // clear any stale error from header decode
             payloadJSON = String(data: prettyData, encoding: .utf8) ?? ""
             
             // Extract expiration

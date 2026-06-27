@@ -32,7 +32,7 @@ struct Base64ImageTool: Tool {
                 .font(.title2.bold())
             Spacer()
             Button(L(.paste)) {
-                base64Text = NSPasteboard.general.string(forType: .string) ?? ""
+                base64Text = PasteboardHelper.readString()
                 decodeImage()
             }
             Button(L(.clear)) {

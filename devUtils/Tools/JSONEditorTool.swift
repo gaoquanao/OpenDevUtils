@@ -31,7 +31,7 @@ struct JSONEditorTool: Tool {
                 .font(.title2.bold())
             Spacer()
             Button(L(.paste)) {
-                input = NSPasteboard.general.string(forType: .string) ?? ""
+                input = PasteboardHelper.readString()
                 prettyPrintJSON()
             }
             Button(L(.prettyPrint)) { prettyPrintJSON() }
@@ -64,8 +64,7 @@ struct JSONEditorTool: Tool {
                 Text(L(.output)).font(.headline)
                 Spacer()
                 Button(L(.copy)) {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(output, forType: .string)
+                    PasteboardHelper.writeString(output)
                 }
                 .disabled(output.isEmpty)
             }
@@ -79,14 +78,23 @@ struct JSONEditorTool: Tool {
         .padding(.leading, 8)
     }
     
+    private static let maxJSONSize = 50_000_000 // 50 MB input limit
+
     private func prettyPrintJSON() {
         errorMessage = nil
-        guard let data = input.data(using: .utf8) else {
-            errorMessage = L(.invalidJSON); return
+        let utf8Count = input.utf8.count
+        guard utf8Count < Self.maxJSONSize else {
+            errorMessage = L(.jsonTooLarge, utf8Count / 1_000_000, Self.maxJSONSize / 1_000_000)
+            return
+        }
+        let (json, err) = tryParseJSON(input)
+        if let err = err {
+            errorMessage = err
+            output = ""
+            return
         }
         do {
-            let json = try JSONSerialization.jsonObject(with: data)
-            let prettyData = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
+            let prettyData = try JSONSerialization.data(withJSONObject: json!, options: [.prettyPrinted, .sortedKeys])
             output = String(data: prettyData, encoding: .utf8) ?? ""
         } catch {
             errorMessage = "\(L(.invalidJSON)): \(error.localizedDescription)"
@@ -96,12 +104,19 @@ struct JSONEditorTool: Tool {
     
     private func minifyJSON() {
         errorMessage = nil
-        guard let data = input.data(using: .utf8) else {
-            errorMessage = L(.invalidJSON); return
+        let utf8Count = input.utf8.count
+        guard utf8Count < Self.maxJSONSize else {
+            errorMessage = L(.jsonTooLarge, utf8Count / 1_000_000, Self.maxJSONSize / 1_000_000)
+            return
+        }
+        let (json, err) = tryParseJSON(input)
+        if let err = err {
+            errorMessage = err
+            output = ""
+            return
         }
         do {
-            let json = try JSONSerialization.jsonObject(with: data)
-            let minifiedData = try JSONSerialization.data(withJSONObject: json, options: [])
+            let minifiedData = try JSONSerialization.data(withJSONObject: json!, options: [])
             output = String(data: minifiedData, encoding: .utf8) ?? ""
         } catch {
             errorMessage = "\(L(.invalidJSON)): \(error.localizedDescription)"

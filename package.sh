@@ -8,7 +8,7 @@ CONTENTS="$APP_BUNDLE/Contents"
 RESOURCES_DIR="$CONTENTS/Resources"
 DMG_NAME="$BUILD_DIR/$APP_NAME.dmg"
 DMG_TEMP="$BUILD_DIR/dmg-temp"
-VERSION="1.0.0"
+VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "1.0.0")
 
 echo "========================================="
 echo "  Packaging $APP_NAME v$VERSION"

@@ -95,8 +95,7 @@ struct QRCodeTool: Tool {
                         saveImage(img)
                     }
                     Button(L(.copy)) {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(input, forType: .string)
+                        PasteboardHelper.writeString(input)
                     }
                     Spacer()
                 }

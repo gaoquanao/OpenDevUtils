@@ -52,7 +52,7 @@ struct Base64Tool: Tool {
                     .font(.headline)
                 Spacer()
                 Button(L(.paste)) {
-                    input = NSPasteboard.general.string(forType: .string) ?? ""
+                    input = PasteboardHelper.readString()
                 }
             }
             
@@ -79,8 +79,7 @@ struct Base64Tool: Tool {
                     .font(.headline)
                 Spacer()
                 Button(L(.copy)) {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(output, forType: .string)
+                    PasteboardHelper.writeString(output)
                 }
                 .disabled(output.isEmpty)
             }
