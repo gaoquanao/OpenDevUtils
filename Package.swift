@@ -7,7 +7,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "OpenDevUtils",
-            path: "devUtils"
+            path: "devUtils",
+            exclude: ["Assets.xcassets"]
         ),
         .testTarget(
             name: "OpenDevUtilsTests",

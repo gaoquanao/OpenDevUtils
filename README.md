@@ -52,7 +52,7 @@
 ## Screenshots / 截图
 
 <p align="center">
-  <img src="screenshot.png" width="800" alt="OpenDevUtils Screenshot">
+  <img src="/pic/Screenshot.png" width="800" alt="OpenDevUtils Screenshot">
 </p>
 
 ---
@@ -142,4 +142,4 @@ devUtils/
 
 ## License / 许可
 
-MIT License / MIT 许可证
+ Apache-2.0 license / Apache 许可证
