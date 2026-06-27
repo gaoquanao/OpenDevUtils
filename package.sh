@@ -57,16 +57,17 @@ hdiutil create \
     "$DMG_NAME" \
     -quiet
 
-# Step 4: Configure DMG window layout
+# Step 4: Configure DMG window layout (CI-safe)
 echo ""
 echo "[4/4] Configuring DMG window..."
 
-# Mount the DMG
 MOUNT_DIR="/Volumes/$APP_NAME"
 hdiutil attach "$DMG_NAME" -readwrite -noverify -quiet
 
-# Set Finder window properties via AppleScript
-osascript << EOF
+if [ -n "$CI" ]; then
+    echo "  CI detected, skipping Finder window configuration"
+else
+    osascript << EOF
 tell application "Finder"
     tell disk "$APP_NAME"
         open
@@ -87,6 +88,7 @@ tell application "Finder"
     end tell
 end tell
 EOF
+fi
 
 # Unmount
 hdiutil detach "$MOUNT_DIR" -quiet 2>/dev/null || true
