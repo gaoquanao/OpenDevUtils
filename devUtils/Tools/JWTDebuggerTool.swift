@@ -135,72 +135,21 @@ struct JWTDebuggerTool: Tool {
         payloadJSON = ""
         signature = ""
         claimsNote = ""
-        
-        let token = jwtToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !token.isEmpty else { return }
-        
-        let parts = token.components(separatedBy: ".")
-        guard parts.count >= 2 else {
-            errorMessage = L(.invalidJWT)
-            return
-        }
-        
-        var errors: [String] = []
-        
-        // Decode header
-        if let headerData = Self.base64URLDecode(parts[0]),
-           let json = try? JSONSerialization.jsonObject(with: headerData),
-           let prettyData = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
-            headerJSON = String(data: prettyData, encoding: .utf8) ?? ""
-        } else {
-            errors.append("\(L(.jwtHeader)): \(L(.invalidJWT))")
-        }
-        
-        // Decode payload
-        if let payloadData = Self.base64URLDecode(parts[1]),
-           let json = try? JSONSerialization.jsonObject(with: payloadData),
-           let prettyData = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
-            // Keep payloadJSON as pure JSON so Copy produces valid JSON;
-            // human-friendly claim notes are shown separately.
-            payloadJSON = String(data: prettyData, encoding: .utf8) ?? ""
-            
-            if let dict = json as? [String: Any] {
-                let formatter = DateFormatter()
-                formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-                var notes: [String] = []
-                if let exp = dict["exp"] as? TimeInterval {
-                    notes.append("exp: \(formatter.string(from: Date(timeIntervalSince1970: exp)))")
-                }
-                if let iat = dict["iat"] as? TimeInterval {
-                    notes.append("iat: \(formatter.string(from: Date(timeIntervalSince1970: iat)))")
-                }
-                claimsNote = notes.joined(separator: "\n")
+
+        guard !jwtToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+
+        let decoded = JWTDecoder.decode(jwtToken)
+        headerJSON = decoded.headerJSON
+        payloadJSON = decoded.payloadJSON
+        signature = decoded.signature
+        claimsNote = decoded.claimsNote
+
+        errorMessage = decoded.issues.map { issue -> String in
+            switch issue {
+            case .malformed: return L(.invalidJWT)
+            case .invalidHeader: return "\(L(.jwtHeader)): \(L(.invalidJWT))"
+            case .invalidPayload: return "\(L(.jwtPayload)): \(L(.invalidJWT))"
             }
-        } else {
-            errors.append("\(L(.jwtPayload)): \(L(.invalidJWT))")
-        }
-        
-        // Signature
-        if parts.count >= 3 {
-            signature = parts[2]
-        }
-        
-        errorMessage = errors.isEmpty ? nil : errors.joined(separator: "\n")
-    }
-    
-    static func base64URLDecode(_ str: String) -> Data? {
-        let cleaned = str.components(separatedBy: .whitespacesAndNewlines).joined()
-        guard !cleaned.isEmpty else { return nil }
-        
-        var base64 = cleaned
-            .replacingOccurrences(of: "-", with: "+")
-            .replacingOccurrences(of: "_", with: "/")
-        
-        let remainder = base64.count % 4
-        if remainder > 0 {
-            base64 += String(repeating: "=", count: 4 - remainder)
-        }
-        
-        return Data(base64Encoded: base64)
+        }.joined(separator: "\n")
     }
 }

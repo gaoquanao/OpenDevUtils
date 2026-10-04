@@ -175,4 +175,64 @@ final class JSONPathEngineTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - Remaining filter operators (`<=`, `>=`, `!=`)
+
+    func testFilterLessThanOrEqual() throws {
+        let results = try engine.evaluate(json: sampleJSON, path: "$.store.book[?(@.price <= 8.95)]")
+        XCTAssertEqual(results.count, 1)
+        let title = (results[0].value as? [String: Any])?["title"] as? String
+        XCTAssertEqual(title, "Sayings of the Century")
+    }
+
+    func testFilterGreaterThanOrEqual() throws {
+        let results = try engine.evaluate(json: sampleJSON, path: "$.store.book[?(@.price >= 8.99)]")
+        XCTAssertEqual(results.count, 2)
+        let titles = results.compactMap { ($0.value as? [String: Any])?["title"] as? String }.sorted()
+        XCTAssertEqual(titles, ["Moby Dick", "Sword of Honour"])
+    }
+
+    func testFilterNotEquals() throws {
+        let results = try engine.evaluate(json: sampleJSON, path: "$.store.book[?(@.price != 8.95)]")
+        XCTAssertEqual(results.count, 2)
+        let titles = results.compactMap { ($0.value as? [String: Any])?["title"] as? String }.sorted()
+        XCTAssertEqual(titles, ["Moby Dick", "Sword of Honour"])
+    }
+
+    // MARK: - Bracket key access
+
+    func testBracketKeyAccessWithDoubleQuotes() throws {
+        let results = try engine.evaluate(json: sampleJSON, path: "$['store']['bicycle']['color']")
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results[0].value as? String, "red")
+    }
+
+    func testBracketKeyAccessWithSingleQuotes() throws {
+        let results = try engine.evaluate(json: sampleJSON, path: "$.store.bicycle['price']")
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results[0].value as? Double, 19.95)
+    }
+
+    /// Bracket access over an array collects the key from every element.
+    func testBracketKeyAccessOnArray() throws {
+        let results = try engine.evaluate(json: sampleJSON, path: "$.store.book[*]['title']")
+        XCTAssertEqual(results.count, 3)
+    }
+
+    // MARK: - Index bounds
+
+    func testOutOfBoundsIndexThrows() {
+        XCTAssertThrowsError(try engine.evaluate(json: sampleJSON, path: "$.store.book[10]")) { error in
+            XCTAssertTrue(error is JSONPathError)
+        }
+        XCTAssertThrowsError(try engine.evaluate(json: sampleJSON, path: "$.store.book[-10]")) { error in
+            XCTAssertTrue(error is JSONPathError)
+        }
+    }
+
+    /// Filtering a non-array node yields no results rather than an error.
+    func testFilterOnNonArrayReturnsEmpty() throws {
+        let results = try engine.evaluate(json: sampleJSON, path: "$.store.bicycle[?(@.price < 10)]")
+        XCTAssertTrue(results.isEmpty)
+    }
 }

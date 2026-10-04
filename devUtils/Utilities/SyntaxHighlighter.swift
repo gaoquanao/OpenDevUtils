@@ -203,16 +203,22 @@ struct SyntaxHighlightedCode: View {
     let language: String
 
     var body: some View {
-        ScrollView([.horizontal, .vertical]) {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(code.components(separatedBy: "\n").enumerated()), id: \.offset) { _, line in
-                    highlightedLine(line)
+        GeometryReader { geo in
+            ScrollView([.horizontal, .vertical]) {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(code.components(separatedBy: "\n").enumerated()), id: \.offset) { _, line in
+                        highlightedLine(line)
+                    }
                 }
+                .font(.system(.body, design: .monospaced))
+                .textSelection(.enabled)
+                .padding(8)
+                // Inside a bidirectional ScrollView the proposal is unbounded,
+                // so `maxWidth: .infinity` never expands. `minWidth` does:
+                // the block fills the available width and only grows wider
+                // (with horizontal scrolling) when a line actually overflows.
+                .frame(minWidth: geo.size.width, minHeight: geo.size.height, alignment: .topLeading)
             }
-            .font(.system(.body, design: .monospaced))
-            .textSelection(.enabled)
-            .padding(8)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .background(Color(nsColor: .textBackgroundColor))
         .cornerRadius(8)
@@ -226,6 +232,7 @@ struct SyntaxHighlightedCode: View {
                     .foregroundStyle(color(for: token.kind))
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func color(for kind: SyntaxHighlighter.TokenKind) -> Color {
