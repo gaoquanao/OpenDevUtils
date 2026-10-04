@@ -159,8 +159,7 @@ struct CronTool: Tool {
         nextRuns = []
         humanReadable = ""
 
-        let parts = cronExpression.trimmingCharacters(in: .whitespaces)
-            .components(separatedBy: .whitespaces)
+        let parts = Self.splitFields(cronExpression)
 
         guard parts.count == 5 else {
             errorMessage = L(.cronFiveFieldsRequired)
@@ -262,45 +261,87 @@ struct CronTool: Tool {
         let cal = Calendar.current
         let comps = cal.dateComponents([.minute, .hour, .day, .month, .weekday], from: date)
         
-        return matchField(parts[0], value: comps.minute ?? 0, min: 0, max: 59) &&
-               matchField(parts[1], value: comps.hour ?? 0, min: 0, max: 23) &&
-               matchField(parts[2], value: comps.day ?? 1, min: 1, max: 31) &&
-               matchField(parts[3], value: comps.month ?? 1, min: 1, max: 12) &&
-               matchField(parts[4], value: (comps.weekday ?? 1) - 1, min: 0, max: 7)
+        return Self.matchField(parts[0], value: comps.minute ?? 0, min: 0, max: 59) &&
+               Self.matchField(parts[1], value: comps.hour ?? 0, min: 0, max: 23) &&
+               Self.matchField(parts[2], value: comps.day ?? 1, min: 1, max: 31) &&
+               Self.matchField(parts[3], value: comps.month ?? 1, min: 1, max: 12) &&
+               Self.matchField(parts[4], value: (comps.weekday ?? 1) - 1, min: 0, max: 7)
     }
     
-    private func matchField(_ field: String, value: Int, min: Int, max: Int) -> Bool {
-        if field == "*" { return true }
-        if field.hasPrefix("*/") {
-            if let step = Int(String(field.dropFirst(2))) {
-                return value % step == 0
-            }
-        }
-        if field.contains("/") {
-            let parts = field.components(separatedBy: "/")
-            if parts.count == 2, let step = Int(parts[1]) {
-                if parts[0] == "*" {
-                    return value % step == 0
-                }
-                let rangeParts = parts[0].components(separatedBy: "-")
-                if rangeParts.count == 2, let low = Int(rangeParts[0]), let high = Int(rangeParts[1]) {
-                    return value >= low && value <= high && (value - low) % step == 0
-                }
-            }
-        }
-        if field.contains("-") {
-            let parts = field.components(separatedBy: "-")
-            if parts.count == 2, let low = Int(parts[0]), let high = Int(parts[1]) {
-                return value >= low && value <= high
-            }
-        }
+    /// Splits a cron expression into its five fields, tolerating tabs,
+    /// newlines (pasted expressions) and repeated whitespace.
+    static func splitFields(_ expression: String) -> [String] {
+        expression.components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+    }
+
+    /// Matches one cron field against a value.
+    ///
+    /// - Note: `max == 7` is the weekday field where cron allows `7` == Sunday
+    ///   == `0`; both are normalized to 0 before comparing.
+    static func matchField(_ field: String, value: Int, min: Int, max: Int) -> Bool {
         if field.contains(",") {
-            let values = field.components(separatedBy: ",").compactMap { Int($0) }
-            return values.contains(value)
+            return field.components(separatedBy: ",")
+                .contains { matchSingleField($0, value: value, min: min, max: max) }
         }
-        if let v = Int(field) {
-            return value == v
+        return matchSingleField(field, value: value, min: min, max: max)
+    }
+
+    private static func matchSingleField(_ field: String, value: Int, min: Int, max: Int) -> Bool {
+        let trimmed = field.trimmingCharacters(in: .whitespaces)
+        if trimmed == "*" { return true }
+
+        var rangePart = trimmed
+        var step = 1
+        if let slash = trimmed.firstIndex(of: "/") {
+            rangePart = String(trimmed[..<slash])
+            // step must be a positive integer — `*/0` used to reach `value % 0`
+            // and crash the app.
+            guard let parsedStep = Int(trimmed[trimmed.index(after: slash)...]), parsedStep > 0 else {
+                return false
+            }
+            step = parsedStep
         }
-        return false
+
+        let normalize: (Int) -> Int = { v in (max == 7 && v == 7) ? 0 : v }
+
+        let low: Int
+        let high: Int
+        if rangePart == "*" {
+            low = min
+            high = max
+        } else if rangePart.contains("-") {
+            let bounds = rangePart.components(separatedBy: "-")
+            guard bounds.count == 2, let a = Int(bounds[0]), let b = Int(bounds[1]) else {
+                return false
+            }
+            low = normalize(a)
+            high = normalize(b)
+        } else if let single = Int(rangePart) {
+            let target = normalize(single)
+            if step > 1 {
+                // e.g. `0/15` → from target to the field maximum
+                low = target
+                high = max
+            } else {
+                return value == target
+            }
+        } else {
+            return false
+        }
+
+        let inRange: Bool
+        if low <= high {
+            inRange = value >= low && value <= high
+        } else {
+            // wrapped range (e.g. weekday `5-7` normalized to 5...0)
+            inRange = value >= low || value <= high
+        }
+        guard inRange else { return false }
+
+        if step > 1 {
+            return ((value - low) % step + step) % step == 0
+        }
+        return true
     }
 }

@@ -218,6 +218,18 @@ enum LocalizedString {
     case cronAt
     case cronRuns
     case jsonTooLarge
+    case outputTruncated
+    case inputTooLarge
+    case base64NotText
+
+    // Second round of fixes
+    case copied
+    case noQRCodeFound
+    case clipboardHasNoImage
+    case tooManyMatches
+    case regexTooSlow
+    case invalidPercentEncoding
+    case urlNotFound
     
     func text(for lang: AppLanguage) -> String {
         switch lang {
@@ -406,6 +418,16 @@ enum LocalizedString {
         case .cronAt: return "At %@"
         case .cronRuns: return "Runs %@"
         case .jsonTooLarge: return "JSON too large (%dMB), max %dMB"
+        case .outputTruncated: return "Output truncated: showing first %d of %d characters. Use Copy for the full result."
+        case .inputTooLarge: return "Input too large (%dMB), max %dMB"
+        case .base64NotText: return "Decoded data is not valid UTF-8 text"
+        case .copied: return "Copied"
+        case .noQRCodeFound: return "No QR code found in the image"
+        case .clipboardHasNoImage: return "The clipboard does not contain an image"
+        case .tooManyMatches: return "Stopped after %d matches"
+        case .regexTooSlow: return "Matching timed out — the pattern may be too slow"
+        case .invalidPercentEncoding: return "Invalid percent-encoding"
+        case .urlNotFound: return "No URL found in the cURL command"
         }
     }
     
@@ -581,6 +603,16 @@ enum LocalizedString {
         case .cronAt: return "在 %@"
         case .cronRuns: return "执行 %@"
         case .jsonTooLarge: return "JSON 过大（%dMB），上限 %dMB"
+        case .outputTruncated: return "输出已截断：仅显示前 %d / %d 个字符，点击复制获取完整结果。"
+        case .inputTooLarge: return "输入过大（%dMB），上限 %dMB"
+        case .base64NotText: return "解码结果不是有效的 UTF-8 文本"
+        case .copied: return "已复制"
+        case .noQRCodeFound: return "图片中未找到二维码"
+        case .clipboardHasNoImage: return "剪贴板中没有图片"
+        case .tooManyMatches: return "已在 %d 个匹配后停止"
+        case .regexTooSlow: return "匹配超时，正则可能太慢"
+        case .invalidPercentEncoding: return "无效的百分号编码"
+        case .urlNotFound: return "cURL 命令中未找到 URL"
         }
     }
     
@@ -756,6 +788,16 @@ enum LocalizedString {
         case .cronAt: return "%@ で"
         case .cronRuns: return "%@ に実行"
         case .jsonTooLarge: return "JSONが大きすぎます（%dMB）、上限 %dMB"
+        case .outputTruncated: return "出力を切り詰めました：先頭 %d / %d 文字のみ表示。コピーで全文取得できます。"
+        case .inputTooLarge: return "入力が大きすぎます（%dMB）、上限 %dMB"
+        case .base64NotText: return "デコード結果は有効な UTF-8 テキストではありません"
+        case .copied: return "コピーしました"
+        case .noQRCodeFound: return "画像に QR コードが見つかりません"
+        case .clipboardHasNoImage: return "クリップボードに画像がありません"
+        case .tooManyMatches: return "%d 件の一致で停止しました"
+        case .regexTooSlow: return "タイムアウトしました。正則が遅すぎる可能性があります"
+        case .invalidPercentEncoding: return "無効なパーセントエンコードです"
+        case .urlNotFound: return "cURL コマンドに URL が見つかりません"
         }
     }
     
@@ -931,6 +973,16 @@ enum LocalizedString {
         case .cronAt: return "%@에"
         case .cronRuns: return "%@에 실행"
         case .jsonTooLarge: return "JSON이 너무 큽니다（%dMB）, 최대 %dMB"
+        case .outputTruncated: return "출력이 잘렸습니다: %d / %d자만 표시합니다. 복사로 전체 내용을 확인하세요."
+        case .inputTooLarge: return "입력이 너무 큽니다（%dMB）, 최대 %dMB"
+        case .base64NotText: return "디코드 결과가 유효한 UTF-8 텍스트가 아닙니다"
+        case .copied: return "복사됨"
+        case .noQRCodeFound: return "이미지에서 QR 코드를 찾을 수 없습니다"
+        case .clipboardHasNoImage: return "클립보드에 이미지가 없습니다"
+        case .tooManyMatches: return "%d개 일치 후 중지됨"
+        case .regexTooSlow: return "시간 초과 — 정규식이 너무 느릴 수 있습니다"
+        case .invalidPercentEncoding: return "잘못된 퍼센트 인코딩입니다"
+        case .urlNotFound: return "cURL 명령에서 URL을 찾을 수 없습니다"
         }
     }
 }

@@ -8,7 +8,10 @@ struct JSONEditorTool: Tool {
     
     @State private var input = ""
     @State private var output = ""
+    @State private var outputPreview = JSONProcessor.Preview(display: "", truncated: false, totalCharacters: 0)
     @State private var errorMessage: String?
+    @State private var isProcessing = false
+    @State private var requestVersion = 0
     @ObservedObject private var lang = LanguageManager.shared
     
     var body: some View {
@@ -30,6 +33,10 @@ struct JSONEditorTool: Tool {
             Text(L(.jsonEditor))
                 .font(.title2.bold())
             Spacer()
+            if isProcessing {
+                ProgressView()
+                    .controlSize(.small)
+            }
             Button(L(.paste)) {
                 input = PasteboardHelper.readString()
                 prettyPrintJSON()
@@ -53,6 +60,7 @@ struct JSONEditorTool: Tool {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
                     .font(.caption)
+                    .textSelection(.enabled)
             }
         }
         .padding(.trailing, 8)
@@ -68,59 +76,58 @@ struct JSONEditorTool: Tool {
                 }
                 .disabled(output.isEmpty)
             }
-            TextEditor(text: .constant(output))
-                .font(.system(.body, design: .monospaced))
-                .scrollContentBackground(.visible)
-                .border(.quaternary, width: 1)
-                .frame(minWidth: 200, minHeight: 200, maxHeight: .infinity)
-                .textSelection(.enabled)
+            // ScrollView + Text lays out large output far cheaper than a
+            // TextEditor (NSTextView), and only the previewed slice is rendered.
+            ScrollView {
+                Text(outputPreview.display)
+                    .font(.system(.body, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .border(.quaternary, width: 1)
+            .frame(minWidth: 200, minHeight: 200, maxHeight: .infinity)
+            if outputPreview.truncated {
+                Label(L(.outputTruncated, outputPreview.display.count, outputPreview.totalCharacters),
+                      systemImage: "scissors")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(.leading, 8)
     }
     
-    private static let maxJSONSize = 50_000_000 // 50 MB input limit
-
     private func prettyPrintJSON() {
-        errorMessage = nil
-        let utf8Count = input.utf8.count
-        guard utf8Count < Self.maxJSONSize else {
-            errorMessage = L(.jsonTooLarge, utf8Count / 1_000_000, Self.maxJSONSize / 1_000_000)
-            return
-        }
-        let (json, err) = tryParseJSON(input)
-        if let err = err {
-            errorMessage = err
-            output = ""
-            return
-        }
-        do {
-            let prettyData = try JSONSerialization.data(withJSONObject: json!, options: [.prettyPrinted, .sortedKeys])
-            output = String(data: prettyData, encoding: .utf8) ?? ""
-        } catch {
-            errorMessage = "\(L(.invalidJSON)): \(error.localizedDescription)"
-            output = ""
-        }
+        process { JSONProcessor.prettyPrint($0) }
     }
     
     private func minifyJSON() {
+        process { JSONProcessor.minify($0) }
+    }
+    
+    /// Parses/serializes off the main thread; stale requests (the user kept
+    /// typing or clicked again) are dropped via `requestVersion`.
+    private func process(_ work: @escaping (String) -> Result<String, JSONProcessor.Failure>) {
         errorMessage = nil
-        let utf8Count = input.utf8.count
-        guard utf8Count < Self.maxJSONSize else {
-            errorMessage = L(.jsonTooLarge, utf8Count / 1_000_000, Self.maxJSONSize / 1_000_000)
-            return
-        }
-        let (json, err) = tryParseJSON(input)
-        if let err = err {
-            errorMessage = err
-            output = ""
-            return
-        }
-        do {
-            let minifiedData = try JSONSerialization.data(withJSONObject: json!, options: [])
-            output = String(data: minifiedData, encoding: .utf8) ?? ""
-        } catch {
-            errorMessage = "\(L(.invalidJSON)): \(error.localizedDescription)"
-            output = ""
+        output = ""
+        outputPreview = JSONProcessor.Preview(display: "", truncated: false, totalCharacters: 0)
+        requestVersion += 1
+        let version = requestVersion
+        let snapshot = input
+        isProcessing = true
+        
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = work(snapshot)
+            DispatchQueue.main.async {
+                guard version == requestVersion else { return }
+                isProcessing = false
+                switch result {
+                case .success(let text):
+                    output = text
+                    outputPreview = JSONProcessor.preview(text)
+                case .failure(let failure):
+                    errorMessage = failure.message
+                }
+            }
         }
     }
 }

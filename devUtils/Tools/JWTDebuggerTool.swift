@@ -10,6 +10,7 @@ struct JWTDebuggerTool: Tool {
     @State private var headerJSON = ""
     @State private var payloadJSON = ""
     @State private var signature = ""
+    @State private var claimsNote = ""
     @State private var errorMessage: String?
     @ObservedObject private var lang = LanguageManager.shared
     
@@ -19,7 +20,7 @@ struct JWTDebuggerTool: Tool {
             Divider()
             VStack(spacing: 16) {
                 inputSection
-                if !headerJSON.isEmpty {
+                if !headerJSON.isEmpty || !payloadJSON.isEmpty {
                     outputSection
                 }
                 Spacer(minLength: 0)
@@ -101,6 +102,12 @@ struct JWTDebuggerTool: Tool {
                     .border(.quaternary, width: 1)
                     .frame(minHeight: 120)
                     .textSelection(.enabled)
+                if !claimsNote.isEmpty {
+                    Text(claimsNote)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
             }
             
             VStack(alignment: .leading, spacing: 8) {
@@ -127,6 +134,7 @@ struct JWTDebuggerTool: Tool {
         headerJSON = ""
         payloadJSON = ""
         signature = ""
+        claimsNote = ""
         
         let token = jwtToken.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !token.isEmpty else { return }
@@ -137,51 +145,54 @@ struct JWTDebuggerTool: Tool {
             return
         }
         
+        var errors: [String] = []
+        
         // Decode header
-        if let headerData = base64URLDecode(parts[0]),
+        if let headerData = Self.base64URLDecode(parts[0]),
            let json = try? JSONSerialization.jsonObject(with: headerData),
            let prettyData = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
             headerJSON = String(data: prettyData, encoding: .utf8) ?? ""
         } else {
-            errorMessage = L(.invalidJWT)
+            errors.append("\(L(.jwtHeader)): \(L(.invalidJWT))")
         }
         
         // Decode payload
-        if let payloadData = base64URLDecode(parts[1]),
+        if let payloadData = Self.base64URLDecode(parts[1]),
            let json = try? JSONSerialization.jsonObject(with: payloadData),
            let prettyData = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
-            errorMessage = nil  // clear any stale error from header decode
+            // Keep payloadJSON as pure JSON so Copy produces valid JSON;
+            // human-friendly claim notes are shown separately.
             payloadJSON = String(data: prettyData, encoding: .utf8) ?? ""
             
-            // Extract expiration
             if let dict = json as? [String: Any] {
-                var displayJSON = payloadJSON
+                let formatter = DateFormatter()
+                formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+                var notes: [String] = []
                 if let exp = dict["exp"] as? TimeInterval {
-                    let date = Date(timeIntervalSince1970: exp)
-                    let formatter = DateFormatter()
-                    formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-                    displayJSON += "\n\n// exp: \(formatter.string(from: date))"
+                    notes.append("exp: \(formatter.string(from: Date(timeIntervalSince1970: exp)))")
                 }
                 if let iat = dict["iat"] as? TimeInterval {
-                    let date = Date(timeIntervalSince1970: iat)
-                    let formatter = DateFormatter()
-                    formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-                    displayJSON += "\n// iat: \(formatter.string(from: date))"
+                    notes.append("iat: \(formatter.string(from: Date(timeIntervalSince1970: iat)))")
                 }
-                payloadJSON = displayJSON
+                claimsNote = notes.joined(separator: "\n")
             }
         } else {
-            errorMessage = L(.invalidJWT)
+            errors.append("\(L(.jwtPayload)): \(L(.invalidJWT))")
         }
         
         // Signature
         if parts.count >= 3 {
             signature = parts[2]
         }
+        
+        errorMessage = errors.isEmpty ? nil : errors.joined(separator: "\n")
     }
     
-    private func base64URLDecode(_ str: String) -> Data? {
-        var base64 = str
+    static func base64URLDecode(_ str: String) -> Data? {
+        let cleaned = str.components(separatedBy: .whitespacesAndNewlines).joined()
+        guard !cleaned.isEmpty else { return nil }
+        
+        var base64 = cleaned
             .replacingOccurrences(of: "-", with: "+")
             .replacingOccurrences(of: "_", with: "/")
         

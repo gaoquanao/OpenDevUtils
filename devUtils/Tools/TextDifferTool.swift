@@ -15,19 +15,6 @@ struct TextDifferTool: Tool {
     
     private static let maxDiffLines = 100_000 // prevent OOM
     
-    struct DiffLine: Identifiable {
-        let id = UUID()
-        let lineNumber: Int
-        let text: String
-        let type: DiffType
-    }
-    
-    enum DiffType {
-        case added
-        case removed
-        case unchanged
-    }
-    
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -144,75 +131,17 @@ struct TextDifferTool: Tool {
         }
     }
     
-    /// Compute a proper LCS-based diff (Myers-like) instead of naive line-by-line comparison.
     private func computeDiff() {
-        let leftLines = leftText.components(separatedBy: "\n")
-        let rightLines = rightText.components(separatedBy: "\n")
-        
-        // Size guard
-        let totalLines = leftLines.count + rightLines.count
+        let leftLineCount = leftText.isEmpty ? 0 : leftText.components(separatedBy: "\n").count
+        let rightLineCount = rightText.isEmpty ? 0 : rightText.components(separatedBy: "\n").count
+        let totalLines = leftLineCount + rightLineCount
         guard totalLines < Self.maxDiffLines else {
             diffResult = [DiffLine(lineNumber: 0, text: "Too many lines (\(totalLines/1000)k), max \(Self.maxDiffLines/1000)k", type: .added)]
             return
         }
         
-        let process: (String) -> String = { s in
-            var result = s
-            if ignoreCase { result = result.lowercased() }
-            if ignoreWhitespace {
-                result = result.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            }
-            return result
-        }
-        
-        let leftProc = leftLines.map(process)
-        let rightProc = rightLines.map(process)
-        
-        // Compute LCS table
-        let m = leftProc.count
-        let n = rightProc.count
-        
-        // Use two rows for O(min(m,n)) memory
-        var prev = [Int](repeating: 0, count: n + 1)
-        for i in 1...m {
-            var curr = [Int](repeating: 0, count: n + 1)
-            for j in 1...n {
-                if leftProc[i-1] == rightProc[j-1] {
-                    curr[j] = prev[j-1] + 1
-                } else {
-                    curr[j] = max(prev[j], curr[j-1])
-                }
-            }
-            prev = curr
-        }
-        
-        // Backtrack to build diff
-        var result: [DiffLine] = []
-        var i = m
-        var j = n
-        var lineNum = 1
-        
-        // Collect operations in reverse
-        var ops: [(text: String, type: DiffType)] = []
-        while i > 0 || j > 0 {
-            if i > 0 && j > 0 && leftProc[i-1] == rightProc[j-1] {
-                ops.append((leftLines[i-1], .unchanged))
-                i -= 1; j -= 1
-            } else if j > 0 && (i == 0 || prev[j] < prev[j-1]) {
-                ops.append((rightLines[j-1], .added))
-                j -= 1
-            } else if i > 0 {
-                ops.append((leftLines[i-1], .removed))
-                i -= 1
-            }
-        }
-        
-        // Reverse to correct order
-        for op in ops.reversed() {
-            result.append(DiffLine(lineNumber: lineNum, text: op.text, type: op.type))
-            lineNum += 1
-        }
-        
-        diffResult = result
+        diffResult = DiffCalculator.compute(left: leftText, right: rightText,
+                                            ignoreCase: ignoreCase,
+                                            ignoreWhitespace: ignoreWhitespace)
     }
 }

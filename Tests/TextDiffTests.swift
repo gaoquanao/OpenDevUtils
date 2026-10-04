@@ -1,150 +1,138 @@
 import XCTest
 @testable import OpenDevUtils
 
+/// Tests that exercise the production diff implementation (`DiffCalculator`).
+/// The previous version of this file re-implemented a naive line comparison
+/// and never touched the shipped LCS algorithm, which was broken.
 final class TextDiffTests: XCTestCase {
-    
-    struct DiffLine: Identifiable {
-        let id = UUID()
-        let lineNumber: Int
-        let text: String
-        let type: DiffType
+
+    private func compute(left: String, right: String,
+                         ignoreCase: Bool = false, ignoreWhitespace: Bool = false) -> [DiffLine] {
+        DiffCalculator.compute(left: left, right: right,
+                               ignoreCase: ignoreCase, ignoreWhitespace: ignoreWhitespace)
     }
-    
-    enum DiffType {
-        case added
-        case removed
-        case unchanged
-    }
-    
-    func computeDiff(left: String, right: String, ignoreCase: Bool = false, ignoreWhitespace: Bool = false) -> [DiffLine] {
-        let leftLines = left.components(separatedBy: "\n")
-        let rightLines = right.components(separatedBy: "\n")
-        
-        let process: (String) -> String = { s in
-            var result = s
-            if ignoreCase { result = result.lowercased() }
-            if ignoreWhitespace {
-                result = result.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            }
-            return result
-        }
-        
-        var result: [DiffLine] = []
-        let maxCount = max(leftLines.count, rightLines.count)
-        
-        var lineNum = 1
-        for i in 0..<maxCount {
-            let left = i < leftLines.count ? leftLines[i] : nil
-            let right = i < rightLines.count ? rightLines[i] : nil
-            
-            let leftProcessed = left.map(process) ?? ""
-            let rightProcessed = right.map(process) ?? ""
-            
-            if leftProcessed == rightProcessed {
-                if let l = left {
-                    result.append(DiffLine(lineNumber: lineNum, text: l, type: .unchanged))
-                }
-            } else {
-                if let l = left {
-                    result.append(DiffLine(lineNumber: lineNum, text: l, type: .removed))
-                }
-                if let r = right {
-                    result.append(DiffLine(lineNumber: lineNum, text: r, type: .added))
-                }
-            }
-            lineNum += 1
-        }
-        
-        return result
-    }
-    
+
     func testIdenticalText() {
-        let diff = computeDiff(left: "hello\nworld", right: "hello\nworld")
+        let diff = compute(left: "hello\nworld", right: "hello\nworld")
         XCTAssertEqual(diff.count, 2)
         XCTAssertTrue(diff.allSatisfy { $0.type == .unchanged })
+        XCTAssertEqual(diff.map(\.lineNumber), [1, 2])
     }
-    
-    func testAddedLine() {
-        let diff = computeDiff(left: "hello", right: "hello\nworld")
+
+    func testAddedLineAtEnd() {
+        let diff = compute(left: "hello", right: "hello\nworld")
         XCTAssertEqual(diff.count, 2)
         XCTAssertEqual(diff[0].type, .unchanged)
+        XCTAssertEqual(diff[0].text, "hello")
         XCTAssertEqual(diff[1].type, .added)
         XCTAssertEqual(diff[1].text, "world")
     }
-    
-    func testRemovedLine() {
-        let diff = computeDiff(left: "hello\nworld", right: "hello")
+
+    /// Regression: appending a line used to produce `+a +b -a`.
+    func testAppendedLineKeepsOriginalUnchanged() {
+        let diff = compute(left: "a", right: "a\nb")
+        XCTAssertEqual(diff.map(\.type), [.unchanged, .added])
+        XCTAssertEqual(diff.map(\.text), ["a", "b"])
+    }
+
+    func testRemovedLineAtEnd() {
+        let diff = compute(left: "hello\nworld", right: "hello")
         XCTAssertEqual(diff.count, 2)
         XCTAssertEqual(diff[0].type, .unchanged)
         XCTAssertEqual(diff[1].type, .removed)
         XCTAssertEqual(diff[1].text, "world")
     }
-    
+
     func testModifiedLine() {
-        let diff = computeDiff(left: "hello", right: "hello!")
+        let diff = compute(left: "hello", right: "hello!")
         XCTAssertEqual(diff.count, 2)
         XCTAssertEqual(diff[0].type, .removed)
         XCTAssertEqual(diff[0].text, "hello")
         XCTAssertEqual(diff[1].type, .added)
         XCTAssertEqual(diff[1].text, "hello!")
     }
-    
+
+    /// Regression: modifying a middle line used to re-emit the unchanged
+    /// leading lines as additions.
+    func testModifiedMiddleLine() {
+        let diff = compute(left: "line1\nline2\nline3",
+                           right: "line1\nmodified\nline3")
+        XCTAssertEqual(diff.map(\.type), [.unchanged, .removed, .added, .unchanged])
+        XCTAssertEqual(diff.map(\.text), ["line1", "line2", "modified", "line3"])
+    }
+
     func testEmptyLeft() {
-        let diff = computeDiff(left: "", right: "new content")
-        // Empty left produces an empty line removed + content added
-        XCTAssertGreaterThanOrEqual(diff.count, 1)
-        let added = diff.filter { $0.type == .added }
-        XCTAssertFalse(added.isEmpty)
+        let diff = compute(left: "", right: "new content")
+        XCTAssertEqual(diff.count, 1)
+        XCTAssertEqual(diff[0].type, .added)
+        XCTAssertEqual(diff[0].text, "new content")
     }
-    
+
     func testEmptyRight() {
-        let diff = computeDiff(left: "old content", right: "")
-        XCTAssertGreaterThanOrEqual(diff.count, 1)
-        let removed = diff.filter { $0.type == .removed }
-        XCTAssertFalse(removed.isEmpty)
+        let diff = compute(left: "old content", right: "")
+        XCTAssertEqual(diff.count, 1)
+        XCTAssertEqual(diff[0].type, .removed)
+        XCTAssertEqual(diff[0].text, "old content")
     }
-    
+
     func testBothEmpty() {
-        let diff = computeDiff(left: "", right: "")
-        // Empty string split produces one empty element, diff marks it unchanged
-        XCTAssertLessThanOrEqual(diff.count, 1)
+        XCTAssertTrue(compute(left: "", right: "").isEmpty)
     }
-    
+
     func testIgnoreCase() {
-        let diff = computeDiff(left: "Hello", right: "hello", ignoreCase: true)
+        let diff = compute(left: "Hello", right: "hello", ignoreCase: true)
         XCTAssertEqual(diff.count, 1)
         XCTAssertEqual(diff[0].type, .unchanged)
     }
-    
+
     func testCaseSensitive() {
-        let diff = computeDiff(left: "Hello", right: "hello", ignoreCase: false)
+        let diff = compute(left: "Hello", right: "hello", ignoreCase: false)
         XCTAssertEqual(diff.count, 2)
+        XCTAssertEqual(diff.map(\.type), [.removed, .added])
     }
-    
+
     func testIgnoreWhitespace() {
-        let diff = computeDiff(left: "hello world", right: "hello  world", ignoreWhitespace: true)
+        let diff = compute(left: "hello world", right: "hello  world", ignoreWhitespace: true)
         XCTAssertEqual(diff.count, 1)
         XCTAssertEqual(diff[0].type, .unchanged)
     }
-    
-    func testMultiLineDiff() {
-        let left = "line1\nline2\nline3"
-        let right = "line1\nmodified\nline3"
-        let diff = computeDiff(left: left, right: right)
-        
-        let unchanged = diff.filter { $0.type == .unchanged }
-        let added = diff.filter { $0.type == .added }
-        let removed = diff.filter { $0.type == .removed }
-        
-        XCTAssertEqual(unchanged.count, 2)
-        XCTAssertEqual(added.count, 1)
-        XCTAssertEqual(removed.count, 1)
+
+    func testMultiLineCounts() {
+        let diff = compute(left: "line1\nline2\nline3",
+                           right: "line1\nmodified\nline3")
+        XCTAssertEqual(diff.filter { $0.type == .unchanged }.count, 2)
+        XCTAssertEqual(diff.filter { $0.type == .added }.count, 1)
+        XCTAssertEqual(diff.filter { $0.type == .removed }.count, 1)
     }
-    
-    func testLineNumbering() {
-        let diff = computeDiff(left: "a\nc", right: "a\nb\nc")
-        XCTAssertEqual(diff[0].lineNumber, 1) // a - unchanged
-        XCTAssertEqual(diff[1].lineNumber, 2) // b - added
-        XCTAssertEqual(diff[2].lineNumber, 2) // c vs nothing - wait
+
+    func testLineNumberingIsSequential() {
+        let diff = compute(left: "a\nc", right: "a\nb\nc")
+        XCTAssertEqual(diff.map(\.text), ["a", "b", "c"])
+        XCTAssertEqual(diff.map(\.type), [.unchanged, .added, .unchanged])
+        XCTAssertEqual(diff.map(\.lineNumber), [1, 2, 3])
+    }
+
+    func testInsertInMiddle() {
+        let diff = compute(left: "one\ntwo", right: "one\ninserted\ntwo")
+        XCTAssertEqual(diff.map(\.type), [.unchanged, .added, .unchanged])
+        XCTAssertEqual(diff.map(\.text), ["one", "inserted", "two"])
+    }
+
+    /// Inputs above the LCS cell budget must fall back to a block replace
+    /// instead of computing an unbounded O(m·n) table (which froze the UI).
+    func testOversizedInputUsesBoundedFallback() {
+        let left = (0..<2500).map { "left-\($0)" }.joined(separator: "\n")
+        let right = (0..<2500).map { "right-\($0)" }.joined(separator: "\n")
+
+        let start = Date()
+        let diff = compute(left: left, right: right)
+        let elapsed = Date().timeIntervalSince(start)
+
+        XCTAssertEqual(diff.count, 5000)
+        XCTAssertEqual(diff.filter { $0.type == .removed }.count, 2500)
+        XCTAssertEqual(diff.filter { $0.type == .added }.count, 2500)
+        XCTAssertEqual(diff.first?.type, .removed)
+        XCTAssertEqual(diff.last?.type, .added)
+        XCTAssertLessThan(elapsed, 10, "fallback must stay fast")
     }
 }

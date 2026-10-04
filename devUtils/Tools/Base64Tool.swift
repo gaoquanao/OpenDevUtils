@@ -62,6 +62,8 @@ struct Base64Tool: Tool {
                 .disableSmartQuotes()
                 .border(.quaternary, width: 1)
                 .frame(minWidth: 200, minHeight: 200, maxHeight: .infinity)
+                .onChange(of: input) { _ in process() }
+                .onChange(of: isEncoding) { _ in process() }
             
             if let error = errorMessage {
                 Text(error)
@@ -92,5 +94,21 @@ struct Base64Tool: Tool {
                 .textSelection(.enabled)
         }
         .padding(.leading, 8)
+    }
+    
+    /// The tool previously never wrote to `output`, so it did nothing.
+    private func process() {
+        errorMessage = nil
+        guard !input.isEmpty else {
+            output = ""
+            return
+        }
+        switch Base64Codec.process(input, encode: isEncoding) {
+        case .success(let text):
+            output = text
+        case .failure(let failure):
+            output = ""
+            errorMessage = failure.message
+        }
     }
 }

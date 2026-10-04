@@ -117,4 +117,38 @@ final class JWTDebuggerTests: XCTestCase {
         let date = Date(timeIntervalSince1970: TimeInterval(exp))
         XCTAssertTrue(date > Date())
     }
+
+    // MARK: - Production base64url decoder (JWTDebuggerTool.base64URLDecode)
+
+    func testProductionDecodeSimple() {
+        let original = Data(#"{"sub":"123"}"#.utf8)
+        let encoded = original.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        XCTAssertEqual(JWTDebuggerTool.base64URLDecode(encoded), original)
+    }
+
+    /// Regression: line-wrapped tokens used to fail decoding.
+    func testProductionDecodeStripsWhitespace() {
+        let original = Data(#"{"sub":"1234567890"}"#.utf8)
+        var encoded = original.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        encoded.insert("\n", at: encoded.index(encoded.startIndex, offsetBy: 5))
+        encoded = " " + encoded + " \t"
+        XCTAssertEqual(JWTDebuggerTool.base64URLDecode(encoded), original)
+    }
+
+    func testProductionDecodeHandlesPadding() {
+        let original = Data("Hello".utf8)
+        XCTAssertEqual(JWTDebuggerTool.base64URLDecode("SGVsbG8="), original)
+        XCTAssertEqual(JWTDebuggerTool.base64URLDecode("SGVsbG8"), original)
+    }
+
+    func testProductionDecodeInvalidReturnsNil() {
+        XCTAssertNil(JWTDebuggerTool.base64URLDecode("!!!not-base64!!!"))
+        XCTAssertNil(JWTDebuggerTool.base64URLDecode(""))
+    }
 }

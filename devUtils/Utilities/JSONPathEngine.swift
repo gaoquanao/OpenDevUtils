@@ -47,13 +47,29 @@ class JSONPathEngine {
         var rest = path[path.index(after: path.startIndex)...] // skip $
         
         while !rest.isEmpty {
-            if rest.first == "." {
+            if rest.hasPrefix("..") {
+                // Recursive descent: $..name / $..*
+                rest = rest.dropFirst(2)
+                var end = rest.endIndex
+                if let dotIdx = rest.firstIndex(of: ".") { end = dotIdx }
+                if let bracketIdx = rest.firstIndex(of: "["), bracketIdx < end { end = bracketIdx }
+                let segment = String(rest[..<end])
+                guard !segment.isEmpty else {
+                    throw JSONPathError.invalidPath("Recursive descent '..' must be followed by a name or *")
+                }
+                tokens.append(".." + segment)
+                rest = rest[end...]
+            } else if rest.first == "." {
                 rest = rest.dropFirst()
                 // find next . or [
                 var end = rest.endIndex
                 if let dotIdx = rest.firstIndex(of: ".") { end = dotIdx }
                 if let bracketIdx = rest.firstIndex(of: "["), bracketIdx < end { end = bracketIdx }
-                tokens.append(String(rest[..<end]))
+                let segment = String(rest[..<end])
+                guard !segment.isEmpty else {
+                    throw JSONPathError.invalidPath("Empty path segment")
+                }
+                tokens.append(segment)
                 rest = rest[end...]
             } else if rest.first == "[" {
                 guard let closeIdx = rest.firstIndex(of: "]") else {
@@ -70,6 +86,14 @@ class JSONPathEngine {
     }
     
     private func applyToken(_ json: JSON, token: String) throws -> [JSON] {
+        if token.hasPrefix("..") {
+            var collected: [JSON] = []
+            collect(key: String(token.dropFirst(2)), from: json, into: &collected)
+            return collected
+        }
+        if token == "*" {
+            return allChildren(json)
+        }
         if token.hasPrefix("[") && token.hasSuffix("]") {
             let inner = String(token.dropFirst().dropLast())
             switch inner {
@@ -97,6 +121,24 @@ class JSONPathEngine {
             return dict.values.map { JSON(wrapped: $0) }
         }
         return []
+    }
+
+    /// Collects matching descendants for `$..key` (or every child node for `$..*`).
+    private func collect(key: String, from json: JSON, into result: inout [JSON]) {
+        if let dict = json.value as? [String: Any] {
+            if key == "*" {
+                for (_, value) in dict { result.append(JSON(wrapped: value)) }
+            } else if let value = dict[key] {
+                result.append(JSON(wrapped: value))
+            }
+            for (_, value) in dict {
+                collect(key: key, from: JSON(wrapped: value), into: &result)
+            }
+        } else if let arr = json.value as? [Any] {
+            for value in arr {
+                collect(key: key, from: JSON(wrapped: value), into: &result)
+            }
+        }
     }
     
     private func childByKey(_ json: JSON, key: String) throws -> [JSON] {
@@ -128,6 +170,9 @@ class JSONPathEngine {
     
     private func filterArray(_ json: JSON, expr: String) throws -> [JSON] {
         // e.g. ?(@.price < 10)
+        if expr.contains("&&") || expr.contains("||") {
+            throw JSONPathError.invalidExpression("Compound filters are not supported: \(expr)")
+        }
         let regex = Self.filterRegex
         guard let m = regex.firstMatch(in: expr, range: NSRange(expr.startIndex..., in: expr)) else {
             throw JSONPathError.invalidExpression(expr)
@@ -135,6 +180,9 @@ class JSONPathEngine {
         let key = String(expr[Range(m.range(at: 1), in: expr)!])
         let op = String(expr[Range(m.range(at: 2), in: expr)!])
         let numStr = String(expr[Range(m.range(at: 3), in: expr)!])
+        guard ["<", "<=", ">", ">=", "==", "!="].contains(op) else {
+            throw JSONPathError.invalidExpression("Unsupported operator: \(op)")
+        }
         guard let threshold = Double(numStr) else {
             throw JSONPathError.invalidExpression("Invalid number: \(numStr)")
         }
@@ -143,7 +191,11 @@ class JSONPathEngine {
         
         return arr.compactMap { elem -> JSON? in
             guard let dict = elem as? [String: Any],
-                  let val = dict[key] as? Double else { return nil }
+                  let number = dict[key] as? NSNumber,
+                  CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+            // NSNumber covers both JSONSerialization output and native
+            // Swift Int/Double values (`Int as? Double` fails for the latter).
+            let val = number.doubleValue
             let pass: Bool
             switch op {
             case "<":  pass = val < threshold

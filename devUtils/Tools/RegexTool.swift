@@ -10,13 +10,14 @@ struct RegexTool: Tool {
     @State private var testString = ""
     @State private var matches: [RegexMatch] = []
     @State private var errorMessage: String?
+    @State private var noticeMessage: String?
     @State private var options: Set<RegexOption> = [.caseInsensitive]
-    @State private var lastPattern = ""
-    @State private var lastOptionsHash = 0
-    @State private var cachedRegex: NSRegularExpression?
+    @State private var requestVersion = 0
     @ObservedObject private var lang = LanguageManager.shared
     
-    private static let maxInputSize = 10_000_000 // 10MB input limit for ReDoS protection
+    private static let maxInputSize = RegexRunner.defaultMaxInputBytes
+    private static let maxMatches = RegexRunner.defaultMaxMatches
+    private static let matchDeadline: TimeInterval = 2.0
     
     struct RegexMatch: Identifiable {
         let id = UUID()
@@ -90,10 +91,12 @@ struct RegexTool: Tool {
                 .font(.title2.bold())
             Spacer()
             Button(L(.clear)) {
+                requestVersion += 1
                 pattern = ""
                 testString = ""
                 matches = []
                 errorMessage = nil
+                noticeMessage = nil
             }
         }
         .padding(.vertical, 8)
@@ -114,6 +117,11 @@ struct RegexTool: Tool {
             if let error = errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
+                    .font(.caption)
+            }
+            if let notice = noticeMessage {
+                Label(notice, systemImage: "info.circle")
+                    .foregroundStyle(.orange)
                     .font(.caption)
             }
         }
@@ -204,6 +212,7 @@ struct RegexTool: Tool {
     
     private func executeRegex() {
         errorMessage = nil
+        noticeMessage = nil
         matches = []
         
         guard !pattern.isEmpty else {
@@ -213,53 +222,57 @@ struct RegexTool: Tool {
         
         guard !testString.isEmpty else { return }
         
-        // Size guard for ReDoS protection
+        // Size guard for ReDoS protection (also enforced inside RegexRunner).
         guard testString.utf8.count < Self.maxInputSize else {
-            errorMessage = "Input too large (\(testString.utf8.count / 1_000_000)MB), max 10MB"
+            errorMessage = L(.inputTooLarge, testString.utf8.count / 1_000_000, 10)
             return
         }
         
         let nsOptionsInt = options.reduce(0) { $0 | Int($1.flag.rawValue) }
+        let nsOptions = NSRegularExpression.Options(rawValue: UInt(nsOptionsInt))
+        let runPattern = pattern
+        let input = testString
         
-        // Reuse cached regex if pattern + options unchanged
-        let regex: NSRegularExpression?
-        if pattern == lastPattern && nsOptionsInt == lastOptionsHash, let cached = cachedRegex {
-            regex = cached
-        } else {
-            let nsOptions = NSRegularExpression.Options(rawValue: UInt(nsOptionsInt))
-            regex = try? NSRegularExpression(pattern: pattern, options: nsOptions)
-            cachedRegex = regex
-            lastPattern = pattern
-            lastOptionsHash = nsOptionsInt
-        }
+        requestVersion += 1
+        let version = requestVersion
         
-        guard let re = regex else {
-            errorMessage = L(.invalidRegexPattern)
-            return
-        }
-        
-        let range = NSRange(testString.startIndex..., in: testString)
-        let nsMatches = re.matches(in: testString, options: [], range: range)
-        
-        for m in nsMatches {
-            let matchRange = m.range
-            let text = (testString as NSString).substring(with: matchRange)
+        // Run on a background queue so a pathological pattern can't freeze
+        // the UI; discard stale results via requestVersion.
+        DispatchQueue.global(qos: .userInitiated).async {
+            let deadline = Date().addingTimeInterval(Self.matchDeadline)
+            let result = RegexRunner.run(pattern: runPattern,
+                                         input: input,
+                                         options: nsOptions,
+                                         maxMatches: Self.maxMatches,
+                                         maxInputBytes: Self.maxInputSize,
+                                         deadline: deadline)
             
-            var groups: [String] = []
-            if m.numberOfRanges > 1 {
-                for i in 1..<m.numberOfRanges {
-                    let r = m.range(at: i)
-                    if r.location != NSNotFound {
-                        groups.append((testString as NSString).substring(with: r))
-                    }
+            DispatchQueue.main.async {
+                guard version == self.requestVersion else { return }
+                
+                switch result.status {
+                case .invalidPattern:
+                    self.errorMessage = L(.invalidRegexPattern)
+                    return
+                case .tooLarge:
+                    self.errorMessage = L(.inputTooLarge, input.utf8.count / 1_000_000, 10)
+                    return
+                case .success:
+                    break
                 }
+                
+                self.matches = result.matches.map {
+                    RegexMatch(range: $0.range, text: $0.text, groups: $0.groups)
+                }
+                
+                if result.timedOut {
+                    self.errorMessage = L(.regexTooSlow)
+                } else if result.truncated {
+                    self.noticeMessage = L(.tooManyMatches, result.matches.count)
+                }
+                // No matches is not an error — resultsSection shows the
+                // placeholder for that.
             }
-            
-            matches.append(RegexMatch(range: matchRange, text: text, groups: groups))
-        }
-        
-        if matches.isEmpty {
-            errorMessage = L(.noMatchesFound)
         }
     }
 }
