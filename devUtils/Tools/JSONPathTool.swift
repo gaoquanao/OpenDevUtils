@@ -8,9 +8,12 @@ struct JSONPathTool: Tool {
     
     @State private var jsonInput = ""
     @State private var jsonpath = ""
-    @State private var results: [JSON] = []
+    @State private var resultCount = 0
     @State private var errorMessage: String?
     @State private var formattedOutput = ""
+    @State private var outputPreview = JSONProcessor.Preview(display: "", truncated: false, totalCharacters: 0)
+    @State private var isProcessing = false
+    @State private var requestVersion = 0
     @ObservedObject private var lang = LanguageManager.shared
     
     var body: some View {
@@ -37,6 +40,11 @@ struct JSONPathTool: Tool {
                 .font(.title2.bold())
             
             Spacer()
+            
+            if isProcessing {
+                ProgressView()
+                    .controlSize(.small)
+            }
             
             Button(L(.loadSample)) {
                 loadSampleJSON()
@@ -121,8 +129,8 @@ struct JSONPathTool: Tool {
                     .font(.headline)
                 Spacer()
                 
-                if !results.isEmpty {
-                    Text("\(results.count) \(L(.resultsCount))")
+                if resultCount > 0 {
+                    Text("\(resultCount) \(L(.resultsCount))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -130,57 +138,76 @@ struct JSONPathTool: Tool {
                 Button(L(.copy)) {
                     PasteboardHelper.writeString(formattedOutput)
                 }
-                .disabled(results.isEmpty)
+                .disabled(formattedOutput.isEmpty)
             }
             
             if let error = errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
                     .font(.caption)
+                    .textSelection(.enabled)
                     .padding(.vertical, 4)
             }
             
-            TextEditor(text: .constant(formattedOutput))
-                .font(.system(.body, design: .monospaced))
-                .scrollContentBackground(.visible)
-                .textSelection(.enabled)
-                .border(.quaternary, width: 1)
-                .frame(minHeight: 100, maxHeight: .infinity)
+            ScrollView {
+                Text(outputPreview.display)
+                    .font(.system(.body, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .border(.quaternary, width: 1)
+            .frame(minHeight: 100, maxHeight: .infinity)
+            
+            if outputPreview.truncated {
+                Label(L(.outputTruncated, outputPreview.display.count, outputPreview.totalCharacters),
+                      systemImage: "scissors")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
     
-    private static let maxJSONSize = 50_000_000 // 50 MB input limit
-
+    /// Parsing + evaluation + formatting happen off the main thread so large
+    /// documents don't freeze the UI; stale runs are dropped.
     private func executeQuery() {
         errorMessage = nil
-        results = []
+        resultCount = 0
         formattedOutput = ""
+        outputPreview = JSONProcessor.Preview(display: "", truncated: false, totalCharacters: 0)
+        requestVersion += 1
+        let version = requestVersion
+        let inputSnapshot = jsonInput
+        let pathSnapshot = jsonpath
+        isProcessing = true
         
-        let utf8Count = jsonInput.utf8.count
-        guard utf8Count < Self.maxJSONSize else {
-            errorMessage = L(.jsonTooLarge, utf8Count / 1_000_000, Self.maxJSONSize / 1_000_000)
-            return
-        }
-
-        let (jsonObject, parseErr) = tryParseJSON(jsonInput)
-        if let parseErr = parseErr {
-            errorMessage = parseErr
-            return
-        }
-        
-        let engine = JSONPathEngine()
-        do {
-            results = try engine.evaluate(json: jsonObject!, path: jsonpath)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let outcome: Result<(text: String, count: Int), JSONProcessor.Failure> =
+                JSONProcessor.query(inputSnapshot, path: pathSnapshot).flatMap { matched in
+                    if matched.isEmpty { return .success(("", 0)) }
+                    do {
+                        return .success((try JSONProcessor.formatQueryResults(matched), matched.count))
+                    } catch {
+                        return .failure(.invalid(error.localizedDescription))
+                    }
+                }
             
-            if results.isEmpty {
-                formattedOutput = L(.noResults)
-            } else {
-                let rawValues = results.map { $0.value }
-                let outputData = try JSONSerialization.data(withJSONObject: rawValues.count == 1 ? rawValues[0] : rawValues, options: [.prettyPrinted, .sortedKeys])
-                formattedOutput = String(data: outputData, encoding: .utf8) ?? ""
+            DispatchQueue.main.async {
+                guard version == requestVersion else { return }
+                isProcessing = false
+                switch outcome {
+                case .success(let value):
+                    resultCount = value.count
+                    if value.text.isEmpty {
+                        formattedOutput = L(.noResults)
+                        outputPreview = JSONProcessor.preview(L(.noResults))
+                    } else {
+                        formattedOutput = value.text
+                        outputPreview = JSONProcessor.preview(value.text)
+                    }
+                case .failure(let failure):
+                    errorMessage = failure.message
+                }
             }
-        } catch {
-            errorMessage = error.localizedDescription
         }
     }
     

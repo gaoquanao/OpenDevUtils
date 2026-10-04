@@ -13,6 +13,7 @@ struct HashTool: Tool {
     @State private var outputSHA256 = ""
     @State private var outputSHA512 = ""
     @State private var isUpper = false
+    @State private var errorMessage: String?
     @State private var debounceTask: DispatchWorkItem?
     @ObservedObject private var lang = LanguageManager.shared
     
@@ -47,6 +48,7 @@ struct HashTool: Tool {
                 outputSHA1 = ""
                 outputSHA256 = ""
                 outputSHA512 = ""
+                errorMessage = nil
             }
         }
         .padding(.vertical, 8)
@@ -78,6 +80,12 @@ struct HashTool: Tool {
     
     private var resultsSection: some View {
         VStack(spacing: 8) {
+            if let error = errorMessage {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .font(.caption)
+                    .textSelection(.enabled)
+            }
             hashRow(label: "MD5", value: outputMD5)
             hashRow(label: "SHA1", value: outputSHA1)
             hashRow(label: "SHA256", value: outputSHA256)
@@ -130,14 +138,18 @@ struct HashTool: Tool {
     private func computeHashes() {
         guard let data = input.data(using: .utf8) else {
             clearHashes()
+            errorMessage = nil
             return
         }
         guard data.count < Self.maxHashSize else {
+            // The size error used to be written into the MD5 row, where it
+            // looked like a hash value.
             clearHashes()
-            outputMD5 = "Input too large (\(data.count / 1_000_000)MB), max 10MB"
+            errorMessage = L(.inputTooLarge, data.count / 1_000_000, Self.maxHashSize / 1_000_000)
             return
         }
         
+        errorMessage = nil
         outputMD5 = format(md5(data))
         outputSHA1 = format(sha1(data))
         outputSHA256 = format(sha256(data))

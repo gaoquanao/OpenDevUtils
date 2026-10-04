@@ -9,6 +9,7 @@ struct TokenCounterTool: Tool {
     @State private var input = ""
     @State private var selectedModel: ModelType = .gpt4
     @State private var stats = TokenStats(text: "", charsPerToken: ModelType.gpt4.charsPerToken)
+    @State private var pendingRecompute: DispatchWorkItem?
     
     @ObservedObject private var lang = LanguageManager.shared
     
@@ -62,6 +63,17 @@ struct TokenCounterTool: Tool {
     
     private func recomputeStats() {
         stats = TokenStats(text: input, charsPerToken: selectedModel.charsPerToken)
+    }
+
+    /// Debounced recompute: without it every keystroke re-scanned the whole
+    /// (potentially multi-MB) input synchronously.
+    private func scheduleRecompute() {
+        pendingRecompute?.cancel()
+        let item = DispatchWorkItem { [self] in
+            stats = TokenStats(text: input, charsPerToken: selectedModel.charsPerToken)
+        }
+        pendingRecompute = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: item)
     }
     
     private var header: some View {
@@ -150,7 +162,7 @@ struct TokenCounterTool: Tool {
                 .disableSmartQuotes()
                 .border(.quaternary, width: 1)
                 .frame(minHeight: 200, maxHeight: .infinity)
-                .onChange(of: input) { _ in recomputeStats() }
+                .onChange(of: input) { _ in scheduleRecompute() }
         }
     }
 }
@@ -158,72 +170,84 @@ struct TokenCounterTool: Tool {
 struct TokenStats {
     let text: String
     let charsPerToken: Double
-    
-    var characters: Int { text.count }
-    
-    var bytes: Int { text.utf8.count }
-    
-    var words: Int {
-        text.components(separatedBy: .whitespacesAndNewlines)
+
+    let characters: Int
+    let bytes: Int
+    let words: Int
+    let lines: Int
+    /// Han characters only (UI label "Chinese characters").
+    let chineseChars: Int
+    /// Han + Hiragana + Katakana + Hangul — the set used for token estimation
+    /// AND removed from the remaining text (previously the two sets differed,
+    /// so pure Japanese/Korean input estimated "0 ~ 0 tokens").
+    let cjkChars: Int
+    let englishWords: Int
+    let punctuation: Int
+    let estimatedTokens: Int
+    let estimatedTokensMax: Int
+
+    init(text: String, charsPerToken: Double) {
+        self.text = text
+        self.charsPerToken = charsPerToken
+        self.characters = text.count
+        self.bytes = text.utf8.count
+
+        guard !text.isEmpty else {
+            words = 0
+            lines = 0
+            chineseChars = 0
+            cjkChars = 0
+            englishWords = 0
+            punctuation = 0
+            estimatedTokens = 0
+            estimatedTokensMax = 0
+            return
+        }
+
+        words = text.components(separatedBy: .whitespacesAndNewlines)
             .filter { !$0.isEmpty }.count
-    }
-    
-    var lines: Int {
+
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? 0 : trimmed.components(separatedBy: "\n").count
-    }
-    
-    var chineseChars: Int {
-        text.unicodeScalars.filter {
-            ($0.value >= 0x4E00 && $0.value <= 0x9FFF) ||
-            ($0.value >= 0x3400 && $0.value <= 0x4DBF) ||
-            ($0.value >= 0x20000 && $0.value <= 0x2A6DF)
-        }.count
-    }
-    
-    var englishWords: Int {
-        text.components(separatedBy: .alphanumerics.inverted)
+        lines = trimmed.isEmpty ? 0 : trimmed.components(separatedBy: "\n").count
+
+        var han = 0
+        var cjk = 0
+        var punct = 0
+        for scalar in text.unicodeScalars {
+            let value = scalar.value
+            let isHan = (value >= 0x4E00 && value <= 0x9FFF)
+                || (value >= 0x3400 && value <= 0x4DBF)
+                || (value >= 0x20000 && value <= 0x2A6DF)
+            let isKanaOrHangul = (value >= 0x3040 && value <= 0x30FF)   // Hiragana + Katakana
+                || (value >= 0xAC00 && value <= 0xD7AF)                 // Hangul syllables
+                || (value >= 0x1100 && value <= 0x11FF)                 // Hangul jamo
+                || (value >= 0x3130 && value <= 0x318F)                 // Hangul compat jamo
+            if isHan {
+                han += 1
+                cjk += 1
+            } else if isKanaOrHangul {
+                cjk += 1
+            }
+            if CharacterSet.punctuationCharacters.contains(scalar) {
+                punct += 1
+            }
+        }
+        chineseChars = han
+        cjkChars = cjk
+        punctuation = punct
+
+        englishWords = text.components(separatedBy: .alphanumerics.inverted)
             .filter { !$0.isEmpty && $0.range(of: "[a-zA-Z]", options: .regularExpression) != nil }.count
-    }
-    
-    var punctuation: Int {
-        text.unicodeScalars.filter {
-            CharacterSet.punctuationCharacters.contains($0)
-        }.count
-    }
-    
-    var estimatedTokens: Int {
-        if text.isEmpty { return 0 }
-        
-        // Count Chinese characters separately (typically 1-2 tokens each)
-        let chineseTokenCount = chineseChars * 2
-        
-        // Remaining text
-        let remaining = text.replacingOccurrences(
+
+        // Single removal pass for both estimates (was two regex passes each).
+        let remainingCount = text.replacingOccurrences(
             of: "[\\p{Han}\\p{Hiragana}\\p{Katakana}\\p{Hangul}]",
             with: "",
             options: .regularExpression
-        )
-        
-        // Estimate tokens for remaining text
-        let remainingTokens = Int(ceil(Double(remaining.count) / charsPerToken))
-        
-        return chineseTokenCount + remainingTokens
-    }
-    
-    var estimatedTokensMax: Int {
-        if text.isEmpty { return 0 }
-        
-        let chineseTokenCount = chineseChars * 3
-        
-        let remaining = text.replacingOccurrences(
-            of: "[\\p{Han}\\p{Hiragana}\\p{Katakana}\\p{Hangul}]",
-            with: "",
-            options: .regularExpression
-        )
-        
-        let remainingTokens = Int(ceil(Double(remaining.count) / (charsPerToken - 0.5)))
-        
-        return chineseTokenCount + remainingTokens
+        ).count
+
+        estimatedTokens = cjk * 2 + Int(ceil(Double(remainingCount) / charsPerToken))
+        let maxCharsPerToken = Swift.max(charsPerToken - 0.5, 0.5)
+        estimatedTokensMax = cjk * 3 + Int(ceil(Double(remainingCount) / maxCharsPerToken))
     }
 }

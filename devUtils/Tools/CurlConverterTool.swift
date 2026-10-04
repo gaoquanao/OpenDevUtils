@@ -10,6 +10,8 @@ struct CurlConverterTool: Tool {
     @State private var selectedLanguage: CodeLanguage = .swift
     @State private var outputCode = ""
     @State private var parsedParts: ParsedCurl?
+    @State private var showCopied = false
+    @State private var convertWork: DispatchWorkItem?
     @ObservedObject private var lang = LanguageManager.shared
     
     enum CodeLanguage: String, CaseIterable, Identifiable {
@@ -60,6 +62,7 @@ struct CurlConverterTool: Tool {
                 curlCommand = ""
                 outputCode = ""
                 parsedParts = nil
+                convertWork?.cancel()
             }
         }
         .padding(.vertical, 8)
@@ -68,13 +71,10 @@ struct CurlConverterTool: Tool {
     private var inputSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L(.curlInput)).font(.headline)
-            TextEditor(text: $curlCommand)
-                .font(.system(.body, design: .monospaced))
-                .scrollContentBackground(.visible)
-                .disableSmartQuotes()
+            HighlightedTextEditor(text: $curlCommand, language: "Shell")
                 .border(.quaternary, width: 1)
                 .frame(minHeight: 120)
-                .onChange(of: curlCommand) { _ in convert() }
+                .onChange(of: curlCommand) { _ in scheduleConvert() }
         }
     }
     
@@ -104,8 +104,17 @@ struct CurlConverterTool: Tool {
             HStack {
                 Text(L(.output)).font(.headline)
                 Spacer()
-                Button(L(.copy)) {
+                if let parts = parsedParts, parts.url.isEmpty, !curlCommand.isEmpty {
+                    Label(L(.urlNotFound), systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .font(.caption)
+                }
+                Button(showCopied ? L(.copied) : L(.copy)) {
                     PasteboardHelper.writeString(outputCode)
+                    showCopied = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        showCopied = false
+                    }
                 }
                 .disabled(outputCode.isEmpty)
             }
@@ -114,75 +123,172 @@ struct CurlConverterTool: Tool {
         }
     }
     
+    /// Debounce: re-highlighting the output on every keystroke is wasteful
+    /// while the user is still typing a long cURL command.
+    private func scheduleConvert() {
+        convertWork?.cancel()
+        let work = DispatchWorkItem { convert() }
+        convertWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+    }
+    
     private func convert() {
-        let parsed = parseCurl(curlCommand)
+        let parsed = Self.parseCurl(curlCommand)
         parsedParts = parsed
         
         switch selectedLanguage {
-        case .swift: outputCode = generateSwift(parsed)
-        case .python: outputCode = generatePython(parsed)
-        case .javascript: outputCode = generateJavaScript(parsed)
-        case .go: outputCode = generateGo(parsed)
-        case .php: outputCode = generatePHP(parsed)
-        case .java: outputCode = generateJava(parsed)
+        case .swift: outputCode = Self.generateSwift(parsed)
+        case .python: outputCode = Self.generatePython(parsed)
+        case .javascript: outputCode = Self.generateJavaScript(parsed)
+        case .go: outputCode = Self.generateGo(parsed)
+        case .php: outputCode = Self.generatePHP(parsed)
+        case .java: outputCode = Self.generateJava(parsed)
         }
     }
     
-    private func parseCurl(_ command: String) -> ParsedCurl {
-        var result = ParsedCurl()
-        let cmd = command.replacingOccurrences(of: "\\\n", with: " ")
-            .replacingOccurrences(of: "\n", with: " ")
-        
-        // Extract URL
-        if let urlRange = cmd.range(of: "'[^']*'|\"[^\"]*\"", options: .regularExpression) {
-            var url = String(cmd[urlRange])
-            url = String(url.dropFirst().dropLast())
-            result.url = url
-        }
-        
-        // Extract method
-        if cmd.contains("-X ") || cmd.contains("--request ") {
-            if let methodRange = cmd.range(of: "-X\\s+(\\w+)", options: .regularExpression) {
-                result.method = String(cmd[methodRange]).replacingOccurrences(of: "-X\\s+", with: "", options: .regularExpression)
+    /// Shell-style tokenizer: honors single/double quotes, backslash escapes
+    /// and line continuations, so quoted values (URLs, JSON bodies, headers)
+    /// arrive as single tokens with quotes already stripped.
+    static func tokenize(_ command: String) -> [String] {
+        let normalized = command
+            .replacingOccurrences(of: "\\\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+        var tokens: [String] = []
+        var current = ""
+        var hasToken = false
+        var quote: Character? = nil
+        var escaped = false
+
+        for character in normalized {
+            if escaped {
+                current.append(character)
+                hasToken = true
+                escaped = false
+                continue
             }
+            if character == "\\" {
+                escaped = true
+                hasToken = true
+                continue
+            }
+            if character == "'" || character == "\"" {
+                if quote == nil {
+                    quote = character
+                    hasToken = true
+                } else if quote == character {
+                    quote = nil
+                } else {
+                    current.append(character)
+                }
+                continue
+            }
+            if quote == nil && (character == " " || character == "\t" || character == "\n") {
+                if hasToken {
+                    tokens.append(current)
+                    current = ""
+                    hasToken = false
+                }
+                continue
+            }
+            current.append(character)
+            hasToken = true
         }
-        
-        // Extract headers
-        let headerPattern = "-H\\s+['\"]([^'\"]+)['\"]"
-        if let regex = try? NSRegularExpression(pattern: headerPattern) {
-            let range = NSRange(cmd.startIndex..., in: cmd)
-            for match in regex.matches(in: cmd, range: range) {
-                if let headerRange = Range(match.range(at: 1), in: cmd) {
-                    let header = String(cmd[headerRange])
-                    if let colonIndex = header.firstIndex(of: ":") {
-                        let key = String(header[..<colonIndex]).trimmingCharacters(in: .whitespaces)
-                        let value = String(header[header.index(after: colonIndex)...]).trimmingCharacters(in: .whitespaces)
-                        result.headers.append((key, value))
+        if hasToken {
+            tokens.append(current)
+        }
+        return tokens
+    }
+
+    static func parseCurl(_ command: String) -> ParsedCurl {
+        var result = ParsedCurl()
+        let tokens = tokenize(command)
+
+        let valueOptions: Set<String> = [
+            "-X", "--request",
+            "-H", "--header",
+            "-d", "--data", "--data-raw", "--data-binary", "--data-urlencode",
+            "-u", "--user",
+            "-o", "--output",
+            "-A", "--user-agent",
+            "-e", "--referer",
+            "-b", "--cookie",
+            "-m", "--max-time",
+            "--connect-timeout",
+        ]
+
+        var index = 0
+        while index < tokens.count {
+            var token = tokens[index]
+
+            // Long option with attached value: `--header=...`, `--request=POST`.
+            var attached: String?
+            if token.hasPrefix("--"), let eq = token.firstIndex(of: "=") {
+                attached = String(token[token.index(after: eq)...])
+                token = String(token[..<eq])
+            }
+
+            // Flags
+            if token.hasPrefix("-") {
+                if attached == nil, token.hasPrefix("-X") && !token.hasPrefix("--") && token.count > 2 {
+                    result.method = String(token.dropFirst(2)).uppercased()
+                    index += 1
+                    continue
+                }
+                if attached == nil, token.hasPrefix("-d") && !token.hasPrefix("--") && token.count > 2 && !token.hasPrefix("-H") {
+                    result.body = String(token.dropFirst(2))
+                    if result.method == "GET" { result.method = "POST" }
+                    index += 1
+                    continue
+                }
+                if valueOptions.contains(token) {
+                    if let attached = attached {
+                        applyValueOption(token, attached, to: &result)
+                        index += 1
+                        continue
+                    }
+                    if index + 1 < tokens.count {
+                        applyValueOption(token, tokens[index + 1], to: &result)
+                        index += 2
+                        continue
                     }
                 }
+                if token == "-k" || token == "--insecure" {
+                    result.insecure = true
+                }
+                index += 1
+                continue
             }
-        }
-        
-        // Extract body
-        if cmd.contains("-d ") || cmd.contains("--data ") {
-            if let bodyRange = cmd.range(of: "-d\\s+['\"]([^'\"]*)['\"]", options: .regularExpression) {
-                let body = String(cmd[bodyRange])
-                    .replacingOccurrences(of: "-d\\s+['\"]", with: "", options: .regularExpression)
-                    .replacingOccurrences(of: "['\"]$", with: "", options: .regularExpression)
-                result.body = body
-                if result.method == "GET" { result.method = "POST" }
+
+            // First non-flag argument: the URL (skipping the leading "curl").
+            if result.url.isEmpty && token != "curl" {
+                result.url = token
             }
+            index += 1
         }
-        
-        // Check for -k
-        if cmd.contains("-k ") || cmd.contains("--insecure") {
-            result.insecure = true
-        }
-        
+
         return result
     }
-    
-    private func generateSwift(_ curl: ParsedCurl) -> String {
+
+    private static func applyValueOption(_ option: String, _ value: String, to result: inout ParsedCurl) {
+        switch option {
+        case "-X", "--request":
+            result.method = value.uppercased()
+        case "-H", "--header":
+            if let colon = value.firstIndex(of: ":") {
+                let key = String(value[..<colon]).trimmingCharacters(in: .whitespaces)
+                let headerValue = String(value[value.index(after: colon)...])
+                    .trimmingCharacters(in: .whitespaces)
+                result.headers.append((key, headerValue))
+            }
+        case "-d", "--data", "--data-raw", "--data-binary", "--data-urlencode":
+            result.body = value
+            if result.method == "GET" { result.method = "POST" }
+        default:
+            break
+        }
+    }
+
+    static func generateSwift(_ curl: ParsedCurl) -> String {
         var lines: [String] = []
         lines.append("import Foundation")
         lines.append("")
@@ -209,7 +315,7 @@ struct CurlConverterTool: Tool {
         return lines.joined(separator: "\n")
     }
     
-    private func generatePython(_ curl: ParsedCurl) -> String {
+    static func generatePython(_ curl: ParsedCurl) -> String {
         var lines: [String] = []
         lines.append("import requests")
         lines.append("")
@@ -221,7 +327,7 @@ struct CurlConverterTool: Tool {
             lines.append("}")
         }
         
-        var params = "headers=headers" + (curl.headers.isEmpty ? "={}" : "")
+        var params = curl.headers.isEmpty ? "headers={}" : "headers=headers"
         if !curl.body.isEmpty {
             params += ",\n    data=\"\(curl.body.replacingOccurrences(of: "\"", with: "\\\""))\""
         }
@@ -236,7 +342,7 @@ struct CurlConverterTool: Tool {
         return lines.joined(separator: "\n")
     }
     
-    private func generateJavaScript(_ curl: ParsedCurl) -> String {
+    static func generateJavaScript(_ curl: ParsedCurl) -> String {
         var lines: [String] = []
         lines.append("fetch(\"\(curl.url)\", {")
         lines.append("    method: \"\(curl.method)\",")
@@ -250,7 +356,17 @@ struct CurlConverterTool: Tool {
         }
         
         if !curl.body.isEmpty {
-            lines.append("    body: JSON.stringify(\(curl.body))")
+            let trimmed = curl.body.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix("{") || trimmed.hasPrefix("[") {
+                // A JSON body is valid JavaScript literal syntax as-is.
+                lines.append("    body: \(curl.body)")
+            } else {
+                let escaped = curl.body
+                    .replacingOccurrences(of: "\\", with: "\\\\")
+                    .replacingOccurrences(of: "\"", with: "\\\"")
+                    .replacingOccurrences(of: "\n", with: "\\n")
+                lines.append("    body: \"\(escaped)\"")
+            }
         }
         
         lines.append("})")
@@ -261,7 +377,7 @@ struct CurlConverterTool: Tool {
         return lines.joined(separator: "\n")
     }
     
-    private func generateGo(_ curl: ParsedCurl) -> String {
+    static func generateGo(_ curl: ParsedCurl) -> String {
         var lines: [String] = []
         lines.append("package main")
         lines.append("")
@@ -297,7 +413,7 @@ struct CurlConverterTool: Tool {
         return lines.joined(separator: "\n")
     }
     
-    private func generatePHP(_ curl: ParsedCurl) -> String {
+    static func generatePHP(_ curl: ParsedCurl) -> String {
         var lines: [String] = []
         lines.append("<?php")
         lines.append("")
@@ -327,7 +443,7 @@ struct CurlConverterTool: Tool {
         return lines.joined(separator: "\n")
     }
     
-    private func generateJava(_ curl: ParsedCurl) -> String {
+    static func generateJava(_ curl: ParsedCurl) -> String {
         var lines: [String] = []
         lines.append("import java.net.http.HttpClient;")
         lines.append("import java.net.http.HttpRequest;")

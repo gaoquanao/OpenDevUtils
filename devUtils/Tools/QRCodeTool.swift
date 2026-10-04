@@ -1,5 +1,4 @@
 import SwiftUI
-import CoreImage.CIFilterBuiltins
 
 struct QRCodeTool: Tool {
     let id = "qrCode"
@@ -10,6 +9,7 @@ struct QRCodeTool: Tool {
     @State private var input = ""
     @State private var qrImage: NSImage?
     @State private var qrContent: String = ""
+    @State private var decodedText: String?
     @State private var mode: Mode = .generate
     @State private var errorMessage: String?
     @ObservedObject private var lang = LanguageManager.shared
@@ -105,7 +105,11 @@ struct QRCodeTool: Tool {
     
     private var decodeSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(L(.qrCodeInput)).font(.headline)
+            HStack {
+                Text(L(.qrCodeInput)).font(.headline)
+                Spacer()
+                Button(L(.paste)) { decodeFromClipboard() }
+            }
             TextEditor(text: $qrContent)
                 .font(.system(.body, design: .monospaced))
                 .scrollContentBackground(.visible)
@@ -122,20 +126,33 @@ struct QRCodeTool: Tool {
     }
     
     private func generateQR() {
-        guard !input.isEmpty else { qrImage = nil; return }
-        
-        let context = CIContext()
-        guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return }
-        filter.setValue(Data(input.utf8), forKey: "inputMessage")
-        filter.setValue("M", forKey: "inputCorrectionLevel")
-        
-        guard let outputImage = filter.outputImage else { return }
-        
-        let transform = CGAffineTransform(scaleX: 10, y: 10)
-        let scaledImage = outputImage.transformed(by: transform)
-        
-        guard let cgImage = context.createCGImage(scaledImage, from: scaledImage.extent) else { return }
+        guard !input.isEmpty else {
+            qrImage = nil
+            return
+        }
+        guard let cgImage = QRCoder.generate(from: input) else {
+            // Clear the stale QR code instead of keeping the previous one.
+            qrImage = nil
+            return
+        }
         qrImage = NSImage(cgImage: cgImage, size: NSSize(width: 200, height: 200))
+    }
+    
+    /// Reads an image from the clipboard and decodes any QR code it contains.
+    private func decodeFromClipboard() {
+        errorMessage = nil
+        let pasteboard = NSPasteboard.general
+        let data = pasteboard.data(forType: .png) ?? pasteboard.data(forType: .tiff)
+        guard let data = data, let image = NSImage(data: data) else {
+            errorMessage = L(.clipboardHasNoImage)
+            return
+        }
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              let text = QRCoder.decode(cgImage) else {
+            errorMessage = L(.noQRCodeFound)
+            return
+        }
+        qrContent = text
     }
     
     private func saveImage(_ image: NSImage) {

@@ -8,6 +8,7 @@ struct URLTool: Tool {
     
     @State private var input = ""
     @State private var output = ""
+    @State private var errorMessage: String?
     @State private var mode: Mode = .encode
     @State private var encodingType: EncodingType = .component
     @ObservedObject private var lang = LanguageManager.shared
@@ -78,6 +79,7 @@ struct URLTool: Tool {
             Button(L(.clear)) {
                 input = ""
                 output = ""
+                errorMessage = nil
             }
         }
         .padding(.vertical, 8)
@@ -112,34 +114,37 @@ struct URLTool: Tool {
                 .border(.quaternary, width: 1)
                 .frame(minHeight: 80, maxHeight: .infinity)
                 .textSelection(.enabled)
+            if let error = errorMessage {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .font(.caption)
+            }
         }
     }
     
     private func process() {
+        errorMessage = nil
         guard !input.isEmpty else { output = ""; return }
         
         switch mode {
         case .encode:
             output = encode(input)
         case .decode:
-            output = decode(input)
+            do {
+                output = try URLEncoder.decode(input)
+            } catch {
+                output = ""
+                errorMessage = L(.invalidPercentEncoding)
+            }
         }
     }
     
     private func encode(_ str: String) -> String {
         switch encodingType {
         case .component:
-            return str.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? str
+            return URLEncoder.encodeComponent(str)
         case .full:
-            guard let url = URL(string: str) else { return str }
-            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-            let encodedPath = components?.path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? components?.path ?? ""
-            components?.path = encodedPath
-            return components?.url?.absoluteString ?? str
+            return URLEncoder.encodeFullURL(str)
         }
-    }
-    
-    private func decode(_ str: String) -> String {
-        return str.removingPercentEncoding ?? str
     }
 }

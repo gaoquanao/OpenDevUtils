@@ -39,6 +39,12 @@ class LanguageManager: ObservableObject {
     func t(_ key: LocalizedString, _ args: CVarArg...) -> String {
         key.text(for: language, arguments: args)
     }
+
+    /// Array overload so callers (and `L`) never rely on the undocumented
+    /// "existential splat" behaviour of forwarding an array to a variadic.
+    func t(_ key: LocalizedString, _ arguments: [CVarArg]) -> String {
+        key.text(for: language, arguments: arguments)
+    }
 }
 
 func L(_ key: LocalizedString) -> String {

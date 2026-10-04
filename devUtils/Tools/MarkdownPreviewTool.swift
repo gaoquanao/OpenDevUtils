@@ -8,8 +8,12 @@ struct MarkdownPreviewTool: Tool {
     let category: ToolCategory = .webDev
     
     @State private var markdown = ""
+    @State private var previewHTML = ""
     @State private var refreshID = UUID()
+    @State private var refreshWork: DispatchWorkItem?
     @ObservedObject private var lang = LanguageManager.shared
+    
+    private static let maxMDSize = 5_000_000 // 5MB input limit
     
     var body: some View {
         VStack(spacing: 0) {
@@ -23,6 +27,7 @@ struct MarkdownPreviewTool: Tool {
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear { refreshPreview(immediate: true) }
     }
     
     private var header: some View {
@@ -32,9 +37,9 @@ struct MarkdownPreviewTool: Tool {
             Spacer()
             Button(L(.paste)) {
                 markdown = PasteboardHelper.readString()
-                refreshID = UUID()
+                refreshPreview(immediate: true)
             }
-            Button(L(.refresh)) { refreshID = UUID() }
+            Button(L(.refresh)) { refreshPreview(immediate: true) }
                 .buttonStyle(.borderedProminent)
         }
         .padding(.vertical, 8)
@@ -48,7 +53,7 @@ struct MarkdownPreviewTool: Tool {
                 .scrollContentBackground(.visible)
                 .disableSmartQuotes()
                 .border(.quaternary, width: 1)
-                .onChange(of: markdown) { _ in refreshID = UUID() }
+                .onChange(of: markdown) { _ in refreshPreview(immediate: false) }
         }
         .padding(.trailing, 8)
     }
@@ -59,155 +64,32 @@ struct MarkdownPreviewTool: Tool {
                 Text(L(.preview)).font(.headline)
                 Spacer()
             }
-            HTMLWebView(html: markdownToHTML(markdown), id: refreshID)
+            HTMLWebView(html: previewHTML, id: refreshID)
                 .border(.quaternary, width: 1)
         }
         .padding(.leading, 8)
     }
     
-    private static let maxMDSize = 5_000_000 // 5MB input limit
+    /// Debounced so typing doesn't re-render (and reload) the preview on
+    /// every keystroke — that flashed white and lost the scroll position.
+    /// An explicit Refresh/Paste bumps the id to force a reload.
+    private func refreshPreview(immediate: Bool) {
+        refreshWork?.cancel()
+        let work = DispatchWorkItem {
+            let html = Self.renderPreview(markdown)
+            if html != previewHTML || immediate {
+                previewHTML = html
+                refreshID = UUID()
+            }
+        }
+        refreshWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + (immediate ? 0 : 0.3), execute: work)
+    }
     
-    // Cache commonly used regex patterns
-    private static let inlineCodeRegex = try! NSRegularExpression(pattern: "`([^`]+)`")
-    private static let boldRegex = try! NSRegularExpression(pattern: "\\*\\*(.+?)\\*\\*")
-    private static let italicRegex = try! NSRegularExpression(pattern: "\\*(.+?)\\*")
-    private static let linkRegex = try! NSRegularExpression(pattern: "\\[(.+?)\\]\\((.+?)\\)")
-    private static let imageRegex = try! NSRegularExpression(pattern: "!\\[(.+?)\\]\\((.+?)\\)")
-    
-    private func markdownToHTML(_ md: String) -> String {
-        // Size guard
-        guard md.utf8.count < Self.maxMDSize else {
+    private static func renderPreview(_ md: String) -> String {
+        guard md.utf8.count < maxMDSize else {
             return "<p>Markdown too large (\(md.utf8.count / 1_000_000)MB), max 5MB</p>"
         }
-        
-        let lines = md.components(separatedBy: "\n")
-        var htmlLines: [String] = []
-        var inCodeBlock = false
-        var codeBlockLang = ""
-        var codeBlockContent: [String] = []
-        var inList = false
-        var listType = ""
-        
-        for line in lines {
-            // ── Code block (stateful) ──
-            if line.hasPrefix("```") {
-                if inCodeBlock {
-                    let escaped = codeBlockContent.map(escapeHTML).joined(separator: "\n")
-                    let cls = codeBlockLang.isEmpty ? "" : " class=\"language-\(codeBlockLang)\""
-                    htmlLines.append("<pre><code\(cls)>\(escaped)</code></pre>")
-                    inCodeBlock = false
-                    codeBlockContent = []
-                    codeBlockLang = ""
-                } else {
-                    inCodeBlock = true
-                    codeBlockLang = String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces)
-                }
-                continue
-            }
-            if inCodeBlock {
-                codeBlockContent.append(line)
-                continue
-            }
-            
-            // ── Process inline formatting ──
-            var processed = line
-            processed = applyInline(processed, regex: Self.imageRegex, template: "<img src=\"$2\" alt=\"$1\" style=\"max-width:100%\">")
-            processed = applyInline(processed, regex: Self.linkRegex, template: "<a href=\"$2\">$1</a>")
-            processed = applyInline(processed, regex: Self.boldRegex, template: "<strong>$1</strong>")
-            processed = applyInline(processed, regex: Self.italicRegex, template: "<em>$1</em>")
-            processed = applyInline(processed, regex: Self.inlineCodeRegex, template: "<code>$1</code>")
-            
-            // ── Block-level (check in priority order, single pass) ──
-            if processed.hasPrefix("# ") {
-                htmlLines.append("<h1>\(extractContent(processed, from: 2))</h1>")
-                closeList(&inList, &listType, &htmlLines)
-            } else if processed.hasPrefix("## ") {
-                htmlLines.append("<h2>\(extractContent(processed, from: 3))</h2>")
-                closeList(&inList, &listType, &htmlLines)
-            } else if processed.hasPrefix("### ") {
-                htmlLines.append("<h3>\(extractContent(processed, from: 4))</h3>")
-                closeList(&inList, &listType, &htmlLines)
-            } else if processed.hasPrefix("#### ") {
-                htmlLines.append("<h4>\(extractContent(processed, from: 5))</h4>")
-                closeList(&inList, &listType, &htmlLines)
-            } else if processed.hasPrefix("> ") {
-                htmlLines.append("<blockquote>\(extractContent(processed, from: 2))</blockquote>")
-                closeList(&inList, &listType, &htmlLines)
-            } else if processed == "---" {
-                htmlLines.append("<hr>")
-                closeList(&inList, &listType, &htmlLines)
-            } else if processed.hasPrefix("- ") || processed.hasPrefix("* ") {
-                let content = extractContent(processed, from: 2)
-                if !inList || listType != "ul" { closeList(&inList, &listType, &htmlLines); htmlLines.append("<ul>"); inList = true; listType = "ul" }
-                htmlLines.append("<li>\(content)</li>")
-            } else if processed.range(of: "^\\d+\\. ", options: .regularExpression) != nil {
-                let idx = processed.firstIndex(of: ".") ?? processed.endIndex
-                let afterDot = processed[processed.index(after: idx)...].trimmingCharacters(in: .whitespaces)
-                if !inList || listType != "ol" { closeList(&inList, &listType, &htmlLines); htmlLines.append("<ol>"); inList = true; listType = "ol" }
-                htmlLines.append("<li>\(afterDot)</li>")
-            } else {
-                closeList(&inList, &listType, &htmlLines)
-                if processed.isEmpty {
-                    htmlLines.append("")
-                } else {
-                    htmlLines.append(processed)
-                }
-            }
-        }
-        
-        // Close any open tags
-        closeList(&inList, &listType, &htmlLines)
-        if inCodeBlock {
-            let escaped = codeBlockContent.map(escapeHTML).joined(separator: "\n")
-            htmlLines.append("<pre><code>\(escaped)</code></pre>")
-        }
-        
-        var html = htmlLines.joined(separator: "\n")
-        
-        // Paragraph wrapping (double newline → </p><p>)
-        html = html.replacingOccurrences(of: "\n\n+", with: "</p><p>", options: .regularExpression)
-        html = html.replacingOccurrences(of: "\n", with: "<br>")
-        
-        let css = """
-            body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 20px; line-height: 1.6; color: #333; }
-            pre { background: #f5f5f5; padding: 12px; border-radius: 6px; overflow-x: auto; }
-            code { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
-            blockquote { border-left: 4px solid #ddd; margin: 0; padding: 8px 16px; color: #666; }
-            img { max-width: 100%; }
-            a { color: #0066cc; }
-            h1, h2, h3, h4 { margin-top: 16px; margin-bottom: 8px; }
-            li { margin-left: 20px; }
-        """
-        
-        return """
-        <!DOCTYPE html>
-        <html>
-        <head><meta charset="utf-8"><style>\(css)</style></head>
-        <body><p>\(html)</p></body>
-        </html>
-        """
-    }
-    
-    private func applyInline(_ text: String, regex: NSRegularExpression, template: String) -> String {
-        let nsRange = NSRange(text.startIndex..., in: text)
-        return regex.stringByReplacingMatches(in: text, range: nsRange, withTemplate: template)
-    }
-    
-    private func extractContent(_ text: String, from offset: Int) -> String {
-        let idx = text.index(text.startIndex, offsetBy: min(offset, text.count))
-        return String(text[idx...]).trimmingCharacters(in: .whitespaces)
-    }
-    
-    private func closeList(_ inList: inout Bool, _ listType: inout String, _ html: inout [String]) {
-        guard inList else { return }
-        html.append(listType == "ul" ? "</ul>" : "</ol>")
-        inList = false
-        listType = ""
-    }
-    
-    private func escapeHTML(_ text: String) -> String {
-        text.replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
+        return MarkdownRenderer.render(md)
     }
 }

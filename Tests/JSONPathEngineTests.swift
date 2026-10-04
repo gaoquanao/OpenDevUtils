@@ -92,4 +92,87 @@ final class JSONPathEngineTests: XCTestCase {
             XCTAssertTrue(error is JSONPathError)
         }
     }
+
+    // MARK: - Recursive descent (`..`)
+
+    func testRecursiveDescentPrices() throws {
+        let results = try engine.evaluate(json: sampleJSON, path: "$..price")
+        XCTAssertEqual(results.count, 4)
+        let prices = results.compactMap { $0.value as? Double }.sorted()
+        XCTAssertEqual(prices, [8.95, 8.99, 12.99, 19.95])
+    }
+
+    func testRecursiveDescentTitles() throws {
+        let results = try engine.evaluate(json: sampleJSON, path: "$..title")
+        XCTAssertEqual(results.count, 3)
+        let titles = results.compactMap { $0.value as? String }.sorted()
+        XCTAssertEqual(titles, ["Moby Dick", "Sayings of the Century", "Sword of Honour"])
+    }
+
+    func testRecursiveDescentAsterisk() throws {
+        // Root plus every nested node: store, book array, 3 books,
+        // bicycle, and bicycle's values (color, price) etc. — just assert
+        // it returns more than a plain child access.
+        let results = try engine.evaluate(json: sampleJSON, path: "$..*")
+        XCTAssertGreaterThan(results.count, 5)
+    }
+
+    // MARK: - Filters
+
+    /// Regression: only `Double` was accepted, so documents with integer
+    /// values (or values from native Swift literals) matched nothing.
+    func testFilterOnNativeIntValues() throws {
+        let json: [String: Any] = ["items": [["price": 10], ["price": 3]]]
+        let results = try engine.evaluate(json: json, path: "$.items[?(@.price > 5)]")
+        XCTAssertEqual(results.count, 1)
+        let item = results[0].value as? [String: Any]
+        XCTAssertEqual(item?["price"] as? Int, 10)
+    }
+
+    func testFilterOnJSONSerializationIntegers() throws {
+        let json = try JSONSerialization.jsonObject(with: Data(#"{"items":[{"price":7},{"price":2}]}"#.utf8))
+        let results = try engine.evaluate(json: json, path: "$.items[?(@.price >= 7)]")
+        XCTAssertEqual(results.count, 1)
+    }
+
+    /// Compound filters used to silently evaluate only the first condition.
+    func testCompoundFilterThrowsInsteadOfSilentlyWrongResults() {
+        XCTAssertThrowsError(
+            try engine.evaluate(json: sampleJSON, path: "$.store.book[?(@.price < 10 && @.price > 1)]")
+        ) { error in
+            guard let jsonPathError = error as? JSONPathError,
+                  case .invalidExpression = jsonPathError else {
+                  return XCTFail("Expected JSONPathError.invalidExpression, got \(error)")
+            }
+        }
+    }
+
+    /// Unknown operators used to be treated as "never matches".
+    func testUnknownOperatorThrows() {
+        XCTAssertThrowsError(
+            try engine.evaluate(json: sampleJSON, path: "$.store.book[?(@.price <> 10)]")
+        ) { error in
+            guard let jsonPathError = error as? JSONPathError,
+                  case .invalidExpression = jsonPathError else {
+                  return XCTFail("Expected JSONPathError.invalidExpression, got \(error)")
+            }
+        }
+    }
+
+    func testStringComparisonInFilterIsExplicitlyRejected() {
+        XCTAssertThrowsError(
+            try engine.evaluate(json: sampleJSON, path: "$.store.book[?(@.category == 'fiction')]")
+        )
+    }
+
+    // MARK: - Path validation
+
+    func testEmptySegmentThrows() {
+        XCTAssertThrowsError(try engine.evaluate(json: sampleJSON, path: "$.store.[0]")) { error in
+            guard let jsonPathError = error as? JSONPathError,
+                  case .invalidPath = jsonPathError else {
+                  return XCTFail("Expected JSONPathError.invalidPath, got \(error)")
+            }
+        }
+    }
 }
