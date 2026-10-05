@@ -101,4 +101,21 @@ final class L10nTests: XCTestCase {
             XCTAssertFalse(message.contains("%d"), "\(language): \(message)")
         }
     }
+
+    // MARK: - Keys added by the JSON tree view
+
+    private var jsonTreeKeys: [LocalizedString] = [
+        .viewModeText, .viewModeTree, .expandAll, .collapseAll, .treeViewTooLarge,
+    ]
+
+    func testJSONTreeViewKeysExistInAllLanguages() {
+        for language in AppLanguage.allCases {
+            LanguageManager.shared.language = language
+            for key in jsonTreeKeys {
+                let message = L(key)
+                XCTAssertFalse(message.isEmpty, "\(language) \(key)")
+                XCTAssertFalse(message.contains("%"), "unsubstituted placeholder in \(language) \(key): \(message)")
+            }
+        }
+    }
 }

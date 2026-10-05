@@ -14,6 +14,9 @@ struct JSONPathTool: Tool {
     @State private var outputPreview = JSONProcessor.Preview(display: "", truncated: false, totalCharacters: 0)
     @State private var isProcessing = false
     @State private var requestVersion = 0
+    @State private var outputMode: JSONOutputMode = .tree
+    @State private var expandAllToken = 0
+    @State private var collapseAllToken = 0
     @ObservedObject private var lang = LanguageManager.shared
     
     var body: some View {
@@ -69,10 +72,7 @@ struct JSONPathTool: Tool {
                 }
             }
             
-            TextEditor(text: $jsonInput)
-                .font(.system(.body, design: .monospaced))
-                .scrollContentBackground(.visible)
-                .disableSmartQuotes()
+            HighlightedTextEditor(text: $jsonInput, language: "JSON")
                 .border(.quaternary, width: 1)
                 .frame(minHeight: 100, maxHeight: .infinity)
         }
@@ -135,6 +135,30 @@ struct JSONPathTool: Tool {
                         .foregroundStyle(.secondary)
                 }
                 
+                if !formattedOutput.isEmpty {
+                    Picker("", selection: $outputMode) {
+                        Text(L(.viewModeText)).tag(JSONOutputMode.text)
+                        Text(L(.viewModeTree)).tag(JSONOutputMode.tree)
+                    }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
+                    
+                    if outputMode == .tree {
+                        Button {
+                            expandAllToken += 1
+                        } label: {
+                            Image(systemName: "plus.square")
+                        }
+                        .help(L(.expandAll))
+                        Button {
+                            collapseAllToken += 1
+                        } label: {
+                            Image(systemName: "minus.square")
+                        }
+                        .help(L(.collapseAll))
+                    }
+                }
+                
                 Button(L(.copy)) {
                     PasteboardHelper.writeString(formattedOutput)
                 }
@@ -149,16 +173,24 @@ struct JSONPathTool: Tool {
                     .padding(.vertical, 4)
             }
             
-            ScrollView {
-                Text(outputPreview.display)
-                    .font(.system(.body, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            if outputMode == .tree {
+                JSONTreeView(text: formattedOutput,
+                             expandAllToken: expandAllToken,
+                             collapseAllToken: collapseAllToken)
+                    .border(.quaternary, width: 1)
+                    .frame(minHeight: 100, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    Text(outputPreview.display)
+                        .font(.system(.body, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .border(.quaternary, width: 1)
+                .frame(minHeight: 100, maxHeight: .infinity)
             }
-            .border(.quaternary, width: 1)
-            .frame(minHeight: 100, maxHeight: .infinity)
             
-            if outputPreview.truncated {
+            if outputPreview.truncated && outputMode == .text {
                 Label(L(.outputTruncated, outputPreview.display.count, outputPreview.totalCharacters),
                       systemImage: "scissors")
                     .font(.caption)

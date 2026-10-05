@@ -22,7 +22,7 @@ final class SyntaxHighlighterTests: XCTestCase {
 
     func testTokensReconstructLineForAllLanguages() {
         let line = #"let x = "a\"b" // c ( ) 123 .foo("#
-        for language in ["Swift", "Python", "JavaScript", "Go", "PHP", "Java", "Shell"] {
+        for language in ["Swift", "Python", "JavaScript", "Go", "PHP", "Java", "Shell", "JSON"] {
             let tokens = SyntaxHighlighter.tokens(line: line, language: language)
             XCTAssertEqual(tokens.map(\.text).joined(), line, language)
         }
@@ -118,6 +118,24 @@ final class SyntaxHighlighterTests: XCTestCase {
     func testJavaKeyword() {
         let counts = kinds("public class Main {}", "Java")
         XCTAssertEqual(counts[.keyword] ?? 0, 2)
+    }
+
+    // MARK: - JSON
+
+    func testJSONLineTokenKinds() {
+        let line = #"{ "key": true, "n": -1.5e3, "nil": null }"#
+        let counts = kinds(line, "JSON")
+        XCTAssertEqual(counts[.string] ?? 0, 3)   // "key", "n", "nil"
+        XCTAssertEqual(counts[.keyword] ?? 0, 2)  // true, null
+        XCTAssertEqual(counts[.type] ?? 0, 1)     // -1.5e3
+        XCTAssertEqual(SyntaxHighlighter.tokens(line: line, language: "JSON")
+            .map(\.text).joined(), line)
+    }
+
+    func testJSONDigitsInsideStringsStayString() {
+        let counts = kinds(#""id": 12345"#, "JSON")
+        XCTAssertEqual(counts[.string] ?? 0, 1)
+        XCTAssertEqual(counts[.type] ?? 0, 1)
     }
 
     // MARK: - Performance guards

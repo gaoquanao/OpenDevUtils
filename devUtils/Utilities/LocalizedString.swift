@@ -230,7 +230,14 @@ enum LocalizedString {
     case regexTooSlow
     case invalidPercentEncoding
     case urlNotFound
-    
+
+    // JSON tree view (highlighting + folding)
+    case viewModeText
+    case viewModeTree
+    case expandAll
+    case collapseAll
+    case treeViewTooLarge
+
     func text(for lang: AppLanguage) -> String {
         switch lang {
         case .en: return en
@@ -428,6 +435,11 @@ enum LocalizedString {
         case .regexTooSlow: return "Matching timed out — the pattern may be too slow"
         case .invalidPercentEncoding: return "Invalid percent-encoding"
         case .urlNotFound: return "No URL found in the cURL command"
+        case .viewModeText: return "Text"
+        case .viewModeTree: return "Tree"
+        case .expandAll: return "Expand all"
+        case .collapseAll: return "Collapse all"
+        case .treeViewTooLarge: return "Too large for the tree view — showing the plain text preview."
         }
     }
     
@@ -613,6 +625,11 @@ enum LocalizedString {
         case .regexTooSlow: return "匹配超时，正则可能太慢"
         case .invalidPercentEncoding: return "无效的百分号编码"
         case .urlNotFound: return "cURL 命令中未找到 URL"
+        case .viewModeText: return "文本"
+        case .viewModeTree: return "树"
+        case .expandAll: return "全部展开"
+        case .collapseAll: return "全部收起"
+        case .treeViewTooLarge: return "内容过大，无法显示树视图——已显示纯文本预览。"
         }
     }
     
@@ -798,6 +815,11 @@ enum LocalizedString {
         case .regexTooSlow: return "タイムアウトしました。正則が遅すぎる可能性があります"
         case .invalidPercentEncoding: return "無効なパーセントエンコードです"
         case .urlNotFound: return "cURL コマンドに URL が見つかりません"
+        case .viewModeText: return "テキスト"
+        case .viewModeTree: return "ツリー"
+        case .expandAll: return "すべて展開"
+        case .collapseAll: return "すべて折りたたむ"
+        case .treeViewTooLarge: return "ツリービューには大きすぎるため、プレーンテキストのプレビューを表示しています。"
         }
     }
     
@@ -983,6 +1005,11 @@ enum LocalizedString {
         case .regexTooSlow: return "시간 초과 — 정규식이 너무 느릴 수 있습니다"
         case .invalidPercentEncoding: return "잘못된 퍼센트 인코딩입니다"
         case .urlNotFound: return "cURL 명령에서 URL을 찾을 수 없습니다"
+        case .viewModeText: return "텍스트"
+        case .viewModeTree: return "트리"
+        case .expandAll: return "모두 펼치기"
+        case .collapseAll: return "모두 접기"
+        case .treeViewTooLarge: return "트리 보기에 너무 커서 일반 텍스트 미리 보기를 표시합니다."
         }
     }
 }

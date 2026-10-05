@@ -190,6 +190,14 @@ enum SyntaxHighlighter {
                 (#"\B--?[A-Za-z][-\w]*"#, .variable),
                 (#"\$[A-Za-z_]\w*"#, .variable),
             ]
+        case "JSON":
+            // Strings first: keys and values both highlight green, and the
+            // earlier match location keeps digits inside quotes untouched.
+            return [
+                (#""(?:\\.|[^"\\])*""#, .string),
+                (#"\b(?:true|false|null)\b"#, .keyword),
+                (#"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?"#, .type),
+            ]
         default:
             return []
         }
