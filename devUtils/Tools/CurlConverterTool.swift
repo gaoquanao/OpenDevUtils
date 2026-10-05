@@ -81,21 +81,26 @@ struct CurlConverterTool: Tool {
     private var languagePicker: some View {
         HStack(spacing: 8) {
             Text(L(.language) + ":").font(.headline)
-            ForEach(CodeLanguage.allCases) { lang in
-                Button {
-                    selectedLanguage = lang
-                    convert()
-                } label: {
-                    Text(lang.rawValue)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(selectedLanguage == lang ? Color.accentColor : Color(nsColor: .controlBackgroundColor))
-                        .foregroundColor(selectedLanguage == lang ? .white : .primary)
-                        .cornerRadius(4)
+            // Horizontal scrolling keeps the chips readable when the pane is
+            // narrow — squeezed chips would wrap or truncate their labels.
+            ScrollView(.horizontal) {
+                HStack(spacing: 8) {
+                    ForEach(CodeLanguage.allCases) { lang in
+                        Button {
+                            selectedLanguage = lang
+                            convert()
+                        } label: {
+                            Text(lang.rawValue)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(selectedLanguage == lang ? Color.accentColor : Color(nsColor: .controlBackgroundColor))
+                                .foregroundColor(selectedLanguage == lang ? .white : .primary)
+                                .cornerRadius(4)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .buttonStyle(.plain)
             }
-            Spacer()
         }
     }
     

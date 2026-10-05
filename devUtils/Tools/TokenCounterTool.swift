@@ -92,21 +92,23 @@ struct TokenCounterTool: Tool {
     private var modelPicker: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L(.model)).font(.headline)
-            HStack(spacing: 12) {
-                ForEach(ModelType.allCases) { model in
-                    Button {
-                        selectedModel = model
-                    } label: {
-                        Text(model.label(for: lang.language))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(selectedModel == model ? Color.accentColor : Color(nsColor: .controlBackgroundColor))
-                            .foregroundColor(selectedModel == model ? .white : .primary)
-                            .cornerRadius(6)
+            // Horizontal scrolling protects the chip labels on narrow panes.
+            ScrollView(.horizontal) {
+                HStack(spacing: 12) {
+                    ForEach(ModelType.allCases) { model in
+                        Button {
+                            selectedModel = model
+                        } label: {
+                            Text(model.label(for: lang.language))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(selectedModel == model ? Color.accentColor : Color(nsColor: .controlBackgroundColor))
+                                .foregroundColor(selectedModel == model ? .white : .primary)
+                                .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
-                Spacer()
             }
         }
     }

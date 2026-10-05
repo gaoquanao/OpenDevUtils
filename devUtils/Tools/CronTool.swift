@@ -94,20 +94,25 @@ struct CronTool: Tool {
     private var fieldsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L(.options)).font(.headline)
-            ForEach(parsedFields) { field in
-                HStack {
-                    Text(field.name)
-                        .font(.system(.body, design: .monospaced).bold())
-                        .frame(width: 100, alignment: .trailing)
-                    Text(field.value)
-                        .font(.system(.body, design: .monospaced))
-                        .frame(width: 80, alignment: .leading)
-                    Text(field.description)
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                    Spacer()
+            // Wrapped in a VStack so the padding/background/cornerRadius
+            // below apply to the table as a whole — modifiers on a bare
+            // ForEach apply per row, producing five separate cards.
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(parsedFields) { field in
+                    HStack {
+                        Text(field.name)
+                            .font(.system(.body, design: .monospaced).bold())
+                            .frame(width: 100, alignment: .trailing)
+                        Text(field.value)
+                            .font(.system(.body, design: .monospaced))
+                            .frame(width: 80, alignment: .leading)
+                        Text(field.description)
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.vertical, 2)
                 }
-                .padding(.vertical, 2)
             }
             .padding(8)
             .background(Color(nsColor: .controlBackgroundColor))

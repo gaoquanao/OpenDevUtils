@@ -105,6 +105,10 @@ struct TextDifferTool: Tool {
                             }
                             .padding(.horizontal, 8)
                             .padding(.vertical, 2)
+                            // HStack sizes to its content, so without this the
+                            // row highlight only covered the text width and
+                            // short lines looked half-painted.
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             .background(backgroundForType(line.type))
                         }
                     }

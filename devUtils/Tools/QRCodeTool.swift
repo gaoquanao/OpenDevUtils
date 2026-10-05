@@ -48,21 +48,23 @@ struct QRCodeTool: Tool {
     }
     
     private var modePicker: some View {
-        HStack(spacing: 12) {
-            ForEach(Mode.allCases, id: \.self) { m in
-                Button {
-                    mode = m
-                } label: {
-                    Text(m == .generate ? L(.generate) : L(.scanQR))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(mode == m ? Color.accentColor : Color(nsColor: .controlBackgroundColor))
-                        .foregroundColor(mode == m ? .white : .primary)
-                        .cornerRadius(6)
+        // Horizontal scrolling protects the labels on narrow panes.
+        ScrollView(.horizontal) {
+            HStack(spacing: 12) {
+                ForEach(Mode.allCases, id: \.self) { m in
+                    Button {
+                        mode = m
+                    } label: {
+                        Text(m == .generate ? L(.generate) : L(.scanQR))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(mode == m ? Color.accentColor : Color(nsColor: .controlBackgroundColor))
+                            .foregroundColor(mode == m ? .white : .primary)
+                            .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
-            Spacer()
         }
     }
     

@@ -99,11 +99,13 @@ struct HashTool: Tool {
                 .font(.system(.body, design: .monospaced).bold())
                 .frame(width: 60, alignment: .trailing)
             
+            // No `lineLimit`: SHA512 is 128 hex chars (~1075pt), which
+            // truncated to an ellipsis on typical pane widths. Wrapping keeps
+            // the full digest visible and selectable.
             Text(value.isEmpty ? "—" : value)
                 .font(.system(.body, design: .monospaced))
                 .foregroundStyle(value.isEmpty ? .secondary : .primary)
                 .textSelection(.enabled)
-                .lineLimit(1)
             
             Spacer()
             

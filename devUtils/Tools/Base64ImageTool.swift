@@ -92,11 +92,20 @@ struct Base64ImageTool: Tool {
             }
             
             if let img = image {
-                ScrollView([.horizontal, .vertical]) {
-                    Image(nsImage: img)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: .infinity)
+                // Same root cause as SyntaxHighlightedCode: inside a
+                // bidirectional ScrollView the proposal is unbounded, so
+                // `maxWidth: .infinity` never expands. `minWidth/minHeight`
+                // fill the canvas and center the image; oversized images
+                // still scroll horizontally/vertically.
+                GeometryReader { geo in
+                    ScrollView([.horizontal, .vertical]) {
+                        Image(nsImage: img)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(minWidth: geo.size.width,
+                                   minHeight: geo.size.height,
+                                   alignment: .center)
+                    }
                 }
                 .border(.quaternary, width: 1)
                 
